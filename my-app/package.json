@@ -1,0 +1,43 @@
+{
+  "name": "my-app",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "homepage": "https://github.com/workos/template-convex-nextjs-authkit/#readme",
+  "convex-authkit-auto-provisioning": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/workos/template-convex-nextjs-authkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/workos/template-convex-nextjs-authkit/issues"
+  },
+  "scripts": {
+    "dev": "convex dev --start 'next dev'",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@workos-inc/authkit-nextjs": "^2.17.0",
+    "convex": "^1.44.0",
+    "next": "^16.3.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@convex-dev/eslint-plugin": "^4.0.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.0",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3"
+  }
+}
