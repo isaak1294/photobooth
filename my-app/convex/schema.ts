@@ -31,6 +31,15 @@ export default defineSchema({
     active: v.boolean(),
   }),
 
+  // A "please take a photo now" signal. The phone's Take Picture button inserts
+  // a `pending` row; the Pi (subscribed to Convex, outbound-only) picks it up,
+  // shoots, uploads via /upload, then flips it to `done`. This is the remote
+  // shutter — no inbound connection to the Pi.
+  captureRequests: defineTable({
+    sessionId: v.id('sessions'),
+    status: v.union(v.literal('pending'), v.literal('done')),
+  }).index('by_status', ['status']),
+
   // One render job: source photo + chosen style -> styled output. This single
   // document is both the job state and what the phone + booth subscribe to.
   renders: defineTable({

@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as captures from "../captures.js";
 import type * as http from "../http.js";
 import type * as renders from "../renders.js";
 import type * as sessions from "../sessions.js";
@@ -20,6 +21,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  captures: typeof captures;
   http: typeof http;
   renders: typeof renders;
   sessions: typeof sessions;

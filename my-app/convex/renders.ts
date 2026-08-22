@@ -142,14 +142,32 @@ export const runRender = internalAction({
 });
 
 // ---------------------------------------------------------------------------
-// GMI seam. Swap the body of the `GMI_API_KEY` branch for the real edit-model
-// call once the bake-off (demo-plan §GMI) picks a winner — read the endpoint +
-// model from env vars, never hardcode the key in client code.
+// GMI Cloud edit call. GMI's image API is an async request QUEUE (verified
+// against docs.gmicloud.ai):
+//   submit: POST {base}/api/v1/ie/requestqueue/apikey/requests
+//           body: {"model", "payload": {"image": <base64|url>, "prompt"}}
+//   poll:   GET  {base}/api/v1/ie/requestqueue/apikey/requests/{request_id}
+//           until status === "success"; output at outcome.media_urls[0].url
+//   auth:   Authorization: Bearer <GMI_API_KEY>
 //
-// Until a key is set, this returns an IDENTITY render (the original frame) so
-// the whole reactive pipeline — capture → request → schedule → write-back →
-// both screens update — is demoable end-to-end today, before GMI is wired.
+// Default model is seedream-5.0-pro — verified working on this account with the
+// {image, prompt} payload below, and it preserves facial identity well on a real
+// face (~42s/render). NOTE: the doc-recommended flux-kontext-pro / seededit-*
+// IDs are listed but NOT entitled on this plan (403/404), and the gemini-*-image
+// models reject base64 and require an https:// image URL — so they don't work
+// against a local deployment. Swap GMI_MODEL to bake off faster models later.
+//
+// Set on the deployment (never in client code):
+//   npx convex env set GMI_API_KEY <key>
+//   npx convex env set GMI_MODEL seedream-5.0-pro   # optional override
+//
+// Until GMI_API_KEY is set, this returns an IDENTITY render (the original frame)
+// so the whole reactive pipeline is demoable end-to-end before GMI is wired.
 // ---------------------------------------------------------------------------
+const GMI_BASE_URL = 'https://console.gmicloud.ai';
+const GMI_POLL_INTERVAL_MS = 2000;
+const GMI_MAX_POLLS = 60; // ~2 min ceiling, then we fail visibly rather than hang
+
 async function runGmiEdit(
   ctx: ActionCtx,
   photoStorageId: Id<'_storage'>,
@@ -164,26 +182,78 @@ async function runGmiEdit(
     return photoStorageId;
   }
 
+  const base = process.env.GMI_BASE_URL ?? GMI_BASE_URL;
+  const model = process.env.GMI_MODEL ?? 'seedream-5.0-pro';
+
+  // GMI fetches the input image itself, so a local deployment's 127.0.0.1
+  // storage URL is unreachable from GMI's servers. Send the frame inline as a
+  // base64 data URI — works for both local and hosted deployments. (If GMI
+  // rejects the data: prefix, send raw base64 instead — a bake-off-time tweak.)
   const source = await ctx.storage.get(photoStorageId);
   if (source === null) throw new Error('Source frame missing from storage');
+  const imageDataUri = await blobToDataUri(source);
 
-  // TODO(bake-off): replace with the chosen GMI edit/img2img endpoint + model.
-  // Shape it as: POST image + prompt -> receive edited image bytes.
-  const model = process.env.GMI_MODEL ?? 'REPLACE_WITH_CHOSEN_MODEL';
-  const form = new FormData();
-  form.append('image', source, 'frame.jpg');
-  form.append('prompt', prompt);
-  form.append('model', model);
-
-  const res = await fetch(process.env.GMI_ENDPOINT ?? 'https://api.gmi.example/v1/edit', {
+  // 1. Submit the edit job.
+  const submitRes = await fetch(`${base}/api/v1/ie/requestqueue/apikey/requests`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      payload: { image: imageDataUri, prompt, response_format: 'url' },
+    }),
   });
-  if (!res.ok) {
-    throw new Error(`GMI ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!submitRes.ok) {
+    throw new Error(`GMI submit ${submitRes.status}: ${(await submitRes.text()).slice(0, 300)}`);
+  }
+  const submitJson = (await submitRes.json()) as { request_id?: string; id?: string };
+  const requestId = submitJson.request_id ?? submitJson.id;
+  if (!requestId) {
+    throw new Error(`GMI submit returned no request_id: ${JSON.stringify(submitJson).slice(0, 300)}`);
   }
 
-  const outputBlob = await res.blob();
-  return await ctx.storage.store(outputBlob);
+  // 2. Poll until the job finishes.
+  let outputUrl: string | undefined;
+  for (let attempt = 0; attempt < GMI_MAX_POLLS; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, GMI_POLL_INTERVAL_MS));
+
+    const pollRes = await fetch(`${base}/api/v1/ie/requestqueue/apikey/requests/${requestId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!pollRes.ok) {
+      throw new Error(`GMI poll ${pollRes.status}: ${(await pollRes.text()).slice(0, 300)}`);
+    }
+    const pollJson = (await pollRes.json()) as {
+      status?: string;
+      outcome?: { media_urls?: Array<{ url?: string }> };
+      error?: string;
+    };
+
+    if (pollJson.status === 'success') {
+      outputUrl = pollJson.outcome?.media_urls?.[0]?.url;
+      break;
+    }
+    if (pollJson.status === 'failed') {
+      throw new Error(`GMI render failed: ${pollJson.error ?? 'unknown error'}`);
+    }
+    // queued | processing -> keep polling
+  }
+  if (!outputUrl) throw new Error(`GMI render timed out after ${GMI_MAX_POLLS} polls`);
+
+  // 3. Download the edited image and store it back in Convex.
+  const outRes = await fetch(outputUrl);
+  if (!outRes.ok) throw new Error(`GMI output download ${outRes.status}`);
+  return await ctx.storage.store(await outRes.blob());
+}
+
+// Base64-encode a Blob into a data URI. Chunked so a large frame doesn't blow
+// the stack on the String.fromCharCode(...spread).
+async function blobToDataUri(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  const mime = blob.type || 'image/jpeg';
+  return `data:${mime};base64,${btoa(binary)}`;
 }
