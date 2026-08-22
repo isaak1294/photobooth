@@ -62,9 +62,16 @@ client.onUpdate(anyApi.captures.pendingCaptures, { secret: SECRET }, async (rows
       // Advancing past `pending` also claims it (drops it from pendingCaptures),
       // so a re-fired subscription won't double-shoot.
       await setStatus(requestId, 'counting_down');
+      // Start the camera DURING the countdown: rpicam's -t is preview/AE settle
+      // time, so the sensor warms up while the phone shows 3-2-1 and the shutter
+      // fires right as the count ends — instead of a second 3s wait after
+      // "Smile!". (If a previous shot still holds the camera, withCamera queues
+      // this one and the shutter lands late; that only happens on overlapping
+      // requests, which the phone doesn't produce.)
+      const shot = withCamera(() => capturePhoto(requestId));
       await countdown();
       await setStatus(requestId, 'capturing');
-      const bytes = await withCamera(() => capturePhoto(requestId));
+      const bytes = await shot;
       await setStatus(requestId, 'uploading');
       await uploadPhoto(token, bytes);
       // Only mark complete AFTER the upload succeeded.
@@ -93,13 +100,17 @@ async function countdown() {
 
 async function capturePhoto(requestId) {
   // The real camera command. On Raspberry Pi OS (Bookworm): rpicam-jpeg
-  // (older releases: libcamera-jpeg). The booth runs the 3-2-1 countdown before
-  // the request is even written, so this shoots immediately. 1080p is plenty —
-  // smaller frames also render faster on GMI.
+  // (older releases: libcamera-jpeg). 1080p is plenty — smaller frames also
+  // render faster on GMI.
+  // The -t (preview before shooting) is timed to the countdown: the camera is
+  // started as counting_down begins, warms up through it, and fires ~500ms
+  // after the phone's count hits zero. With no countdown (booth-as-shutter,
+  // COUNTDOWN_MS=0) keep >=1s so auto-exposure still settles.
   // Per-request path: a shared /tmp/frame.jpg would let a queued shot read the
   // previous frame's bytes if anything ever overlapped.
+  const warmupMs = Math.max(1000, COUNTDOWN_MS + 500);
   const path = `/tmp/frame-${requestId}.jpg`;
-  await execFileP('rpicam-jpeg', ['-o', path, '-t', '3000', '--width', '1920', '--height', '1080', '-n']);
+  await execFileP('rpicam-jpeg', ['-o', path, '-t', String(warmupMs), '--width', '1920', '--height', '1080', '-n']);
   const bytes = await readFile(path);
   await unlink(path).catch(() => {});
   return bytes;

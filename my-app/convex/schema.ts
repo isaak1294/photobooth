@@ -30,6 +30,9 @@ export default defineSchema({
     // Lower sorts first in the picker; lets us hide a style without deleting it.
     order: v.number(),
     active: v.boolean(),
+    // Set on guest-created custom themes: only that session's picker shows them.
+    // Absent on the seeded presets, which every session sees.
+    sessionId: v.optional(v.id('sessions')),
   }),
 
   // A "please take a photo now" signal. The phone's Take Picture button inserts
@@ -44,6 +47,25 @@ export default defineSchema({
   })
     .index('by_status', ['status'])
     .index('by_session', ['sessionId']),
+
+  // A guest's "make me a theme from this photo" job. The uploaded inspiration
+  // image lives in file storage; a scheduled action derives {name, prompt} from
+  // it via GMI's vision endpoint and writes a session-scoped `styles` row. The
+  // phone subscribes to this row to show derivation progress (~8s).
+  themeRequests: defineTable({
+    sessionId: v.id('sessions'),
+    storageId: v.id('_storage'),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('processing'),
+      v.literal('done'),
+      v.literal('failed'),
+    ),
+    // Populated when status === 'done'.
+    styleId: v.optional(v.id('styles')),
+    // Populated when status === 'failed'.
+    error: v.optional(v.string()),
+  }).index('by_session', ['sessionId']),
 
   // One render job: source photo + chosen style -> styled output. This single
   // document is both the job state and what the phone + booth subscribe to.

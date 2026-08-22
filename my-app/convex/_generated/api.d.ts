@@ -14,6 +14,7 @@ import type * as http from "../http.js";
 import type * as renders from "../renders.js";
 import type * as sessions from "../sessions.js";
 import type * as styles from "../styles.js";
+import type * as themes from "../themes.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   renders: typeof renders;
   sessions: typeof sessions;
   styles: typeof styles;
+  themes: typeof themes;
 }>;
 
 /**

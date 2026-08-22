@@ -41,6 +41,9 @@ export const getSession = query({
           requestId: v.id('captureRequests'),
           status: captureStatus,
           error: v.union(v.string(), v.null()),
+          // When the Pi last advanced this request. Lets the phone tell a live
+          // failure apart from one that predates the page load.
+          updatedAt: v.number(),
         }),
       ),
       photos: v.array(
@@ -86,6 +89,7 @@ export const getSession = query({
           requestId: latestCapture._id,
           status: latestCapture.status,
           error: latestCapture.error ?? null,
+          updatedAt: latestCapture.updatedAt,
         }
       : null;
 

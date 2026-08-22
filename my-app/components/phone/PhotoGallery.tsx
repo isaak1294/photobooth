@@ -11,12 +11,14 @@ type PhotoGalleryProps = {
   onSelect: (photoId: string) => void;
 };
 
+// The guest's shots: the selected one large, the rest as a swipeable thumbnail
+// rail underneath (horizontal scroll beats a grid on a phone held one-handed).
 export function PhotoGallery({ photos, selectedPhotoId, onSelect }: PhotoGalleryProps) {
   if (photos.length === 0) {
     return (
-      <section className="rounded-2xl border border-dashed border-slate-300 p-6 text-center">
-        <h2 className="font-semibold text-slate-800">Your photos will appear here</h2>
-        <p className="mt-2 text-sm text-slate-500">Tap Take Picture and look at the booth camera.</p>
+      <section className="rounded-3xl border border-dashed border-white/15 p-8 text-center">
+        <h2 className="font-semibold text-white/80">Your photos appear here</h2>
+        <p className="mt-2 text-sm text-white/45">Tap the button above and look at the booth.</p>
       </section>
     );
   }
@@ -26,20 +28,20 @@ export function PhotoGallery({ photos, selectedPhotoId, onSelect }: PhotoGallery
   return (
     <section className="flex flex-col gap-3" aria-labelledby="photo-gallery-title">
       <div className="flex items-baseline justify-between">
-        <h2 id="photo-gallery-title" className="font-semibold text-slate-900">
+        <h2 id="photo-gallery-title" className="font-semibold">
           Your photos
         </h2>
-        <span className="text-xs text-slate-500" aria-live="polite">
+        <span className="text-xs text-white/45" aria-live="polite">
           {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-2xl bg-slate-100">
+      <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04]">
         {selectedPhoto.url ? (
           <img src={selectedPhoto.url} alt="Selected photobooth capture" className="aspect-[4/3] w-full object-cover" />
         ) : (
           <div
-            className="flex aspect-[4/3] items-center justify-center px-6 text-center text-sm text-slate-500"
+            className="flex aspect-[4/3] items-center justify-center px-6 text-center text-sm text-white/45"
             role="img"
             aria-label="Selected photo is unavailable"
           >
@@ -49,7 +51,7 @@ export function PhotoGallery({ photos, selectedPhotoId, onSelect }: PhotoGallery
       </div>
 
       {photos.length > 1 && (
-        <div className="grid grid-cols-3 gap-2" aria-label="Choose a photo">
+        <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1" aria-label="Choose a photo">
           {photos.map((photo, index) => {
             const isSelected = photo._id === selectedPhoto._id;
 
@@ -60,14 +62,14 @@ export function PhotoGallery({ photos, selectedPhotoId, onSelect }: PhotoGallery
                 onClick={() => onSelect(photo._id)}
                 aria-label={`Select photo ${index + 1}`}
                 aria-pressed={isSelected}
-                className="overflow-hidden rounded-xl bg-slate-100 outline-offset-2 ring-slate-950 focus-visible:outline-2 aria-pressed:ring-2"
+                className={`h-16 w-16 shrink-0 snap-start overflow-hidden rounded-xl border bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-400 ${
+                  isSelected ? 'border-fuchsia-400 ring-2 ring-fuchsia-500/60' : 'border-white/10 opacity-70'
+                }`}
               >
                 {photo.url ? (
-                  <img src={photo.url} alt="" loading="lazy" className="aspect-square w-full object-cover" />
+                  <img src={photo.url} alt="" loading="lazy" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="flex aspect-square items-center justify-center px-2 text-xs text-slate-500">
-                    Unavailable
-                  </span>
+                  <span className="flex h-full w-full items-center justify-center text-[10px] text-white/45">N/A</span>
                 )}
               </button>
             );

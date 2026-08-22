@@ -10,77 +10,108 @@ export type RenderResultItem = {
 };
 
 type RenderResultProps = {
-  render: RenderResultItem | null;
-  styleName: string;
+  /** All renders for the selected photo, oldest → newest. */
+  renders: RenderResultItem[];
+  styleNameOf: (styleId: string) => string;
   retryDisabled: boolean;
-  onRetry: () => void;
+  onRetry: (styleId: string) => void;
 };
 
-export function RenderResult({ render, styleName, retryDisabled, onRetry }: RenderResultProps) {
-  if (render === null) return null;
+// AI results for the selected photo. The newest render is the hero; earlier
+// finished ones stay reachable in a small rail so trying a second style never
+// throws away the first.
+export function RenderResult({ renders, styleNameOf, retryDisabled, onRetry }: RenderResultProps) {
+  if (renders.length === 0) return null;
 
-  if (render.status === 'queued' || render.status === 'processing') {
-    return (
-      <section
-        className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center"
-        aria-labelledby="render-result-title"
-        aria-live="polite"
-      >
-        <h2 id="render-result-title" className="font-semibold text-slate-900">
-          Creating your {styleName} photo
-        </h2>
-        <p className="mt-2 text-sm text-slate-500">
-          {render.status === 'queued' ? 'Your edit is in line.' : 'The AI is working. This may take about a minute.'}
-        </p>
-      </section>
-    );
-  }
-
-  if (render.status === 'failed') {
-    return (
-      <section className="rounded-2xl border border-red-200 bg-red-50 p-5" aria-labelledby="render-result-title">
-        <h2 id="render-result-title" className="font-semibold text-red-900">
-          The AI edit didn&apos;t finish
-        </h2>
-        <p className="mt-2 text-sm text-red-700">Please try the {styleName} style again.</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          disabled={retryDisabled}
-          className="mt-4 rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          Try again
-        </button>
-      </section>
-    );
-  }
-
-  if (!render.outputUrl) {
-    return (
-      <section className="rounded-2xl bg-slate-100 p-5 text-sm text-slate-600" role="status">
-        Your edited photo is finishing up...
-      </section>
-    );
-  }
+  const hero = renders[renders.length - 1];
+  const heroName = styleNameOf(hero.styleId);
+  const earlierDone = renders.slice(0, -1).filter((r) => r.status === 'done' && r.outputUrl !== null);
 
   return (
     <section className="flex flex-col gap-3" aria-labelledby="render-result-title">
-      <div className="flex items-baseline justify-between">
-        <h2 id="render-result-title" className="font-semibold text-slate-900">
-          Your AI photo
-        </h2>
-        <span className="text-xs text-slate-500">{styleName}</span>
-      </div>
-      <img src={render.outputUrl} alt={`AI-generated ${styleName} photobooth result`} className="w-full rounded-2xl" />
-      <a
-        href={render.outputUrl}
-        download={`photobooth-${styleName.toLowerCase().replaceAll(' ', '-')}.jpg`}
-        target="_blank"
-        rel="noreferrer"
-        className="rounded-2xl border border-slate-300 px-6 py-3 text-center font-semibold text-slate-800"
-      >
-        Download photo
-      </a>
+      {hero.status === 'queued' || hero.status === 'processing' ? (
+        <div
+          className="rounded-3xl border border-fuchsia-500/30 bg-fuchsia-500/10 p-6 text-center"
+          aria-live="polite"
+        >
+          <h2 id="render-result-title" className="font-semibold">
+            Creating your {heroName} photo
+          </h2>
+          <p className="mt-2 animate-pulse text-sm text-white/55 motion-reduce:animate-none">
+            {hero.status === 'queued' ? 'Your edit is in line…' : 'The AI is painting — usually under a minute.'}
+          </p>
+        </div>
+      ) : hero.status === 'failed' ? (
+        <div className="rounded-3xl border border-red-500/30 bg-red-500/10 p-5" role="alert">
+          <h2 id="render-result-title" className="font-semibold text-red-300">
+            The AI edit didn&apos;t finish
+          </h2>
+          <p className="mt-2 text-sm text-red-300/80">Please try the {heroName} style again.</p>
+          <button
+            type="button"
+            onClick={() => onRetry(hero.styleId)}
+            disabled={retryDisabled}
+            className="mt-4 rounded-xl bg-red-500/80 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            Try again
+          </button>
+        </div>
+      ) : !hero.outputUrl ? (
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-sm text-white/55" role="status">
+          Your edited photo is finishing up…
+        </div>
+      ) : (
+        <>
+          <div className="flex items-baseline justify-between">
+            <h2 id="render-result-title" className="font-semibold">
+              Your AI photo
+            </h2>
+            <span className="text-xs text-white/45">{heroName}</span>
+          </div>
+          <img
+            src={hero.outputUrl}
+            alt={`AI-generated ${heroName} photobooth result`}
+            className="w-full rounded-3xl border border-white/10"
+          />
+          <a
+            href={hero.outputUrl}
+            download={`photobooth-${heroName.toLowerCase().replaceAll(' ', '-')}.jpg`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-2xl border border-white/20 px-6 py-3.5 text-center font-semibold text-white/90 transition-colors hover:border-white/40"
+          >
+            Download photo
+          </a>
+        </>
+      )}
+
+      {earlierDone.length > 0 && (
+        <div className="mt-1">
+          <p className="mb-2 text-xs text-white/45">Earlier styles for this photo</p>
+          <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+            {earlierDone.map((render) => (
+              <a
+                key={render._id}
+                href={render.outputUrl!}
+                target="_blank"
+                rel="noreferrer"
+                className="w-24 shrink-0 snap-start"
+                aria-label={`Open ${styleNameOf(render.styleId)} result`}
+              >
+                <img
+                  src={render.outputUrl!}
+                  alt=""
+                  loading="lazy"
+                  className="aspect-square w-24 rounded-xl border border-white/10 object-cover"
+                />
+                <span className="mt-1 block truncate text-center text-[11px] text-white/50">
+                  {styleNameOf(render.styleId)}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

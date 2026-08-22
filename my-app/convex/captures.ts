@@ -56,7 +56,7 @@ export const pendingCaptures = query({
       .collect();
     const out = [];
     for (const r of pending) {
-      const session = await ctx.db.get(r.sessionId);
+      const session = await ctx.db.get('sessions', r.sessionId);
       if (session) out.push({ requestId: r._id, token: session.token });
     }
     return out;
@@ -76,7 +76,7 @@ export const updateCaptureStatus = mutation({
   returns: v.null(),
   handler: async (ctx, { secret, requestId, status, error }) => {
     assertBooth(secret);
-    const request = await ctx.db.get(requestId);
+    const request = await ctx.db.get('captureRequests', requestId);
     if (request === null) throw new Error('Unknown capture request');
 
     // Store a bounded error string so a caller can't stuff the doc with a huge
@@ -89,7 +89,7 @@ export const updateCaptureStatus = mutation({
           ? 'Capture failed'
           : undefined;
 
-    await ctx.db.patch(requestId, {
+    await ctx.db.patch('captureRequests', requestId, {
       status,
       updatedAt: Date.now(),
       ...(safeError !== undefined ? { error: safeError } : {}),

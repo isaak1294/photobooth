@@ -3,21 +3,32 @@ import { mutation, query } from './_generated/server';
 
 // The style buttons the phone shows. Ordered, and `active` lets you hide one
 // that stops looking good on your team's faces without deleting the row.
+// Pass the session token to also get that session's custom themes — presets
+// (no sessionId) are global, derived themes are visible only to their session.
 export const listStyles = query({
-  args: {},
+  args: { token: v.optional(v.string()) },
   returns: v.array(
     v.object({
       _id: v.id('styles'),
       name: v.string(),
       order: v.number(),
+      custom: v.boolean(),
     }),
   ),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
+    const session = args.token
+      ? await ctx.db
+          .query('sessions')
+          .withIndex('by_token', (q) => q.eq('token', args.token!))
+          .unique()
+      : null;
+
     const styles = await ctx.db.query('styles').collect();
     return styles
       .filter((s) => s.active)
+      .filter((s) => s.sessionId === undefined || (session !== null && s.sessionId === session._id))
       .sort((a, b) => a.order - b.order)
-      .map((s) => ({ _id: s._id, name: s.name, order: s.order }));
+      .map((s) => ({ _id: s._id, name: s.name, order: s.order, custom: s.sessionId !== undefined }));
   },
 });
 
@@ -29,8 +40,11 @@ export const seedStyles = mutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
+    // Only clear the presets — session-scoped custom themes belong to guests.
     const existing = await ctx.db.query('styles').collect();
-    for (const s of existing) await ctx.db.delete(s._id);
+    for (const s of existing) {
+      if (s.sessionId === undefined) await ctx.db.delete('styles', s._id);
+    }
 
     // Prompts are written to be people-count- and composition-agnostic: they
     // apply to everyone in the frame and preserve the original framing/number of

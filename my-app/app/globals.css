@@ -1,14 +1,19 @@
 @import 'tailwindcss';
 
+/* One dark palette across every surface — the booth kiosk and the phone share
+   the same night-sky base and fuchsia accent so the QR handoff feels like one
+   product, not two apps. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  color-scheme: light;
+  --background: #0b0b14;
+  --foreground: #f4f4f8;
+  --accent: #d946ef;
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

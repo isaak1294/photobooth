@@ -29,7 +29,7 @@ export const requestRender = mutation({
 
     // The photo must belong to this session — the token gates the whole run, so
     // don't let a request render a photo from someone else's session.
-    const photo = await ctx.db.get(args.photoId);
+    const photo = await ctx.db.get('photos', args.photoId);
     if (photo === null || photo.sessionId !== session._id) {
       throw new Error('Photo does not belong to this session');
     }
@@ -57,10 +57,10 @@ export const getRenderJob = internalQuery({
     }),
   ),
   handler: async (ctx, args) => {
-    const render = await ctx.db.get(args.renderId);
+    const render = await ctx.db.get('renders', args.renderId);
     if (render === null) return null;
-    const photo = await ctx.db.get(render.photoId);
-    const style = await ctx.db.get(render.styleId);
+    const photo = await ctx.db.get('photos', render.photoId);
+    const style = await ctx.db.get('styles', render.styleId);
     if (photo === null || style === null) return null;
     return { photoStorageId: photo.storageId, prompt: style.prompt };
   },
@@ -79,7 +79,7 @@ export const setStatus = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.renderId, { status: args.status });
+    await ctx.db.patch('renders', args.renderId, { status: args.status });
     return null;
   },
 });
@@ -88,7 +88,7 @@ export const setDone = internalMutation({
   args: { renderId: v.id('renders'), outputStorageId: v.id('_storage') },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.renderId, {
+    await ctx.db.patch('renders', args.renderId, {
       status: 'done',
       outputStorageId: args.outputStorageId,
     });
@@ -100,7 +100,7 @@ export const setFailed = internalMutation({
   args: { renderId: v.id('renders'), error: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.renderId, { status: 'failed', error: args.error });
+    await ctx.db.patch('renders', args.renderId, { status: 'failed', error: args.error });
     return null;
   },
 });
@@ -246,8 +246,9 @@ async function runGmiEdit(
 }
 
 // Base64-encode a Blob into a data URI. Chunked so a large frame doesn't blow
-// the stack on the String.fromCharCode(...spread).
-async function blobToDataUri(blob: Blob): Promise<string> {
+// the stack on the String.fromCharCode(...spread). Exported for themes.ts,
+// which sends the inspiration image to GMI's vision endpoint the same way.
+export async function blobToDataUri(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = '';
   const chunk = 0x8000;
