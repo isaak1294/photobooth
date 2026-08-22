@@ -12,8 +12,8 @@ The organizing principle: build backwards from the run of show. If a requirement
 | Time | Beat | What judges see |
 |---|---|---|
 | 0:00–0:20 | Hook | One line on what it is. No slides. |
-| 0:20–0:50 | Live capture | A judge or teammate steps in, hits the button, countdown, capture. |
-| 0:50–1:15 | Handoff | Scan the QR on a phone (mirrored to the projector). Photos appear as they upload — no refresh. |
+| 0:20–0:50 | Pair + live capture | A judge or teammate scans the booth QR, taps **Take Photo** on the phone, then watches the booth countdown and Pi-camera capture. |
+| 0:50–1:15 | Live return | Photos appear on the already-open phone session as the Pi uploads them — no refresh. Pick one frame. |
 | 1:15–2:05 | The money shot | Tap a style. **Talk track over the render window.** Result lands on the phone *and* the booth screen simultaneously. |
 | 2:05–2:35 | Second style | Different look on the same face, to show it's a pipeline and not a canned asset. |
 | 2:35–3:00 | Close | Stack, one sentence each on Convex and GMI, what's next. |
@@ -31,18 +31,20 @@ The organizing principle: build backwards from the run of show. If a requirement
 ### Hardware
 
 - The teammate's Pi, correct PSU, whatever camera it has, heatsink on.
-- One button on GPIO. One light pointed at the subject.
+- One light pointed at the subject. Keep one GPIO button or keyboard trigger as a fallback for the phone-controlled shutter.
 - HDMI display for the booth UI.
 - **Network:** ethernet if the venue has it, phone hotspot as a saved backup SSID. Test both before demo day.
 - Camera focus and exposure locked at the demo table, not at your desk — the lighting is different and autofocus hunting on stage looks broken.
 
 ### Backend (Convex)
 
-Four tables, four functions. That's the whole backend.
+Four tables and a small function surface. That's the whole backend.
 
 - `sessions`, `photos`, `styles`, `renders`
+- **Mutation** `requestCapture(token)` — atomically records one capture command for the booth paired to that session
+- **Device query/subscription** `getCaptureCommand` — Pi receives an authenticated, idempotent capture request and acknowledges capture-state changes
 - **HTTP action** `/upload` — Pi posts a frame, store via `ctx.storage`, insert a `photos` row
-- **Query** `getSession(token)` — returns photos + renders for one session
+- **Query** `getSession(token)` — returns capture state + photos + renders for one session
 - **Mutation** `requestRender(token, photoId, styleId)` — insert `renders` row as `queued`, `ctx.scheduler.runAfter(0, ...)`, return immediately
 - **Internal action** `runRender` — call GMI, store output, write back `done` via an internal mutation
 
@@ -54,9 +56,9 @@ Three things that stay even in the stripped version, because each is one line an
 
 ### Frontend
 
-**Booth (Pi):** fullscreen, live preview, 3-2-1 countdown, capture, QR + short code, auto-reset. Plus the styled result appearing on the booth screen — that's the beat at 1:15, so it isn't optional here.
+**Booth (Pi):** fullscreen, live preview, ready QR + short code, phone-triggered 3-2-1 countdown and capture, auto-reset. Plus the styled result appearing on the booth screen — that's the beat at 1:15, so it isn't optional here.
 
-**Phone:** open by QR link, subscribed gallery, style buttons, before/after, download. Job state renders straight off the subscribed `renders` doc.
+**Phone:** open by QR link, prominent **Take Photo** remote shutter, subscribed capture state and gallery, photo selection, style buttons, before/after, download. Capture and job state render straight off subscribed Convex documents. The phone never uses its own camera.
 
 ### GMI
 
@@ -103,8 +105,8 @@ Time-check the whole thing out loud at least twice. Three minutes is much shorte
 
 ## 6. Executive Summaries
 
-Hardware. A Raspberry Pi drives a camera, a physical button, a light, and a display — and does nothing else. All intelligence lives in the cloud, which makes the booth a deliberately dumb capture-and-display terminal: it takes a photo, posts it over HTTPS, and shows what the backend tells it to show. That choice keeps the demo independent of which Pi model or camera the team happens to have, since nothing on the device is compute-bound. The single hard dependency is network, so the booth runs on wired ethernet with a pre-tested phone hotspot as fallback, and the same upload endpoint accepts frames from a laptop webcam if the hardware fails entirely.
+Hardware. A Raspberry Pi drives a camera, a light, and a display — and does nothing else. The guest's phone is the primary shutter: a tap records a capture command in Convex, the Pi receives it, runs the booth countdown, takes the photo with the Pi camera, and posts it over HTTPS. A GPIO button or keyboard follows the same path as a fallback. All intelligence lives in the cloud, which makes the booth a deliberately dumb capture-and-display terminal. That choice keeps the demo independent of which Pi model or camera the team happens to have, since nothing on the device is compute-bound. The single hard dependency is network, so the booth runs on wired ethernet with a pre-tested phone hotspot as fallback, and the same upload endpoint accepts frames from a laptop webcam if the hardware fails entirely.
 
-Frontend. Two surfaces, both Convex clients, both live. The booth screen runs a fullscreen kiosk loop — preview, countdown, capture, QR handoff, auto-reset — while the guest's phone opens straight from the QR into a token-gated gallery with a style picker and a before/after view. Neither surface polls for anything: both subscribe to the session's data and re-render when it changes. The result is the demo's centerpiece — a styled photo appearing on the phone and the booth screen at the same instant, with no refresh anywhere.
+Frontend. Two surfaces, both Convex clients, both live. The booth screen runs a fullscreen kiosk loop — ready QR, preview, remotely triggered countdown, capture, result, auto-reset — while the guest's phone opens from the QR as the token-gated remote shutter, capture-status display, gallery, style picker, and before/after view. Neither surface polls for anything: both subscribe to the session's data and re-render when it changes. The phone initiates capture but the Pi camera takes every booth photo. The result is the demo's centerpiece — captured frames and then a styled photo appearing live, with no refresh anywhere.
 
 Backend. Convex is the entire backend: four tables and four functions, with no separate API server, object store, queue, or socket layer. A guest's style request is a mutation that writes a renders row and schedules an action; the action calls a GMI Cloud image-editing model, stores the output, and writes the result back through another mutation. That one document is simultaneously the job record and the thing both screens are subscribed to, which is why the UI needs no status endpoint. Because Convex deliberately does not retry actions that have side effects, every failure path is caught and written back as a visible failed state rather than leaving a job silently stuck.
