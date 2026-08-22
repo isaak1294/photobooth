@@ -1,7 +1,9 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useMutation, useQuery } from 'convex/react';
+import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
+import { useRef, useState } from 'react';
+import { CaptureStatus } from '@/components/phone/CaptureStatus';
 import { api } from '../../../convex/_generated/api';
 
 // The phone surface, opened from the QR at /s/<token>. Everything here is a live
@@ -12,6 +14,11 @@ export default function PhonePage() {
   const styles = useQuery(api.styles.listStyles, {}) ?? [];
   const requestCapture = useMutation(api.captures.requestCapture);
   const requestRender = useMutation(api.renders.requestRender);
+  const connectionState = useConvexConnectionState();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const submissionLock = useRef(false);
+  const isReconnecting = connectionState.hasEverConnected && !connectionState.isWebSocketConnected;
 
   if (session === undefined) return <Centered>Loading…</Centered>;
   if (session === null) return <Centered>Session not found.</Centered>;
@@ -25,18 +32,34 @@ export default function PhonePage() {
   const ACTIVE = ['pending', 'counting_down', 'capturing', 'uploading'];
   const isCapturing = capture !== null && ACTIVE.includes(capture.status);
   const captureLabel: Record<string, string> = {
-    pending: 'Waiting for booth…',
-    counting_down: '3… 2… 1…',
-    capturing: 'Say cheese 📸',
-    uploading: 'Uploading…',
+    pending: 'Waiting for booth...',
+    counting_down: 'Get ready...',
+    capturing: 'Smile!',
+    uploading: 'Sending photo...',
   };
-  const buttonLabel = isCapturing ? captureLabel[capture!.status] : 'Take Picture';
+  const captureDisabled = isSubmitting || isCapturing || isReconnecting;
+  const buttonLabel = isSubmitting
+    ? 'Starting booth...'
+    : isCapturing
+      ? captureLabel[capture!.status]
+      : 'Take Picture';
 
   async function onCapture() {
+    if (submissionLock.current || isCapturing || isReconnecting) return;
+
+    submissionLock.current = true;
+    setIsSubmitting(true);
+    setSubmissionError(null);
+
     try {
       await requestCapture({ token });
-    } catch {
+    } catch (error) {
+      console.error('Capture request failed', error);
+      setSubmissionError("We couldn't start the booth. Try again.");
       // e.g. a capture is already in progress — the status UI already reflects it.
+    } finally {
+      submissionLock.current = false;
+      setIsSubmitting(false);
     }
   }
 
@@ -51,14 +74,14 @@ export default function PhonePage() {
 
       <button
         onClick={onCapture}
-        disabled={isCapturing}
+        disabled={captureDisabled}
+        aria-busy={isSubmitting || isCapturing}
         className="rounded-2xl bg-foreground px-6 py-5 text-lg font-semibold text-background disabled:opacity-50"
       >
         {buttonLabel}
       </button>
-      {capture?.status === 'failed' && (
-        <p className="text-center text-sm text-red-500">Capture failed: {capture.error}</p>
-      )}
+      {submissionError && <p className="text-center text-sm text-red-500">{submissionError}</p>}
+      <CaptureStatus status={capture?.status ?? null} isReconnecting={isReconnecting} />
 
       {photos.length === 0 ? (
         <p className="text-center text-slate-500">
