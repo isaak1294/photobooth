@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import { useRef, useState } from 'react';
 import { CaptureStatus } from '@/components/phone/CaptureStatus';
+import { PhotoGallery } from '@/components/phone/PhotoGallery';
 import { api } from '../../../convex/_generated/api';
 
 // The phone surface, opened from the QR at /s/<token>. Everything here is a live
@@ -17,6 +18,7 @@ export default function PhonePage() {
   const connectionState = useConvexConnectionState();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const submissionLock = useRef(false);
   const isReconnecting = connectionState.hasEverConnected && !connectionState.isWebSocketConnected;
 
@@ -24,7 +26,12 @@ export default function PhonePage() {
   if (session === null) return <Centered>Session not found.</Centered>;
 
   const photos = session.photos;
-  const latest = photos[photos.length - 1];
+  const latestAvailablePhoto = photos
+    .slice()
+    .reverse()
+    .find((photo) => photo.url !== null);
+  const selectedPhoto =
+    photos.find((photo) => photo._id === selectedPhotoId) ?? latestAvailablePhoto ?? photos[photos.length - 1];
   const styleName = (id: string) => styles.find((s) => s._id === id)?.name ?? 'Style';
 
   // Drive the button off the Pi's real capture status (via the subscription).
@@ -38,11 +45,7 @@ export default function PhonePage() {
     uploading: 'Sending photo...',
   };
   const captureDisabled = isSubmitting || isCapturing || isReconnecting;
-  const buttonLabel = isSubmitting
-    ? 'Starting booth...'
-    : isCapturing
-      ? captureLabel[capture!.status]
-      : 'Take Picture';
+  const buttonLabel = isSubmitting ? 'Starting booth...' : isCapturing ? captureLabel[capture!.status] : 'Take Picture';
 
   async function onCapture() {
     if (submissionLock.current || isCapturing || isReconnecting) return;
@@ -83,20 +86,16 @@ export default function PhonePage() {
       {submissionError && <p className="text-center text-sm text-red-500">{submissionError}</p>}
       <CaptureStatus status={capture?.status ?? null} isReconnecting={isReconnecting} />
 
-      {photos.length === 0 ? (
-        <p className="text-center text-slate-500">
-          Tap Take Picture — your photo will appear here.
-        </p>
-      ) : (
+      <PhotoGallery photos={photos} selectedPhotoId={selectedPhoto?._id ?? null} onSelect={setSelectedPhotoId} />
+
+      {selectedPhoto?.url && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-slate-500">Latest photo</h2>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {latest.url && <img src={latest.url} alt="capture" className="w-full rounded-xl" />}
+          <h2 className="text-sm font-semibold text-slate-500">Choose a style</h2>
           <div className="flex flex-wrap gap-2">
             {styles.map((s) => (
               <button
                 key={s._id}
-                onClick={() => void requestRender({ token, photoId: latest._id, styleId: s._id })}
+                onClick={() => void requestRender({ token, photoId: selectedPhoto._id, styleId: s._id })}
                 className="rounded-full border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
               >
                 {s.name}
