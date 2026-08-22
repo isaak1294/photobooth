@@ -83,3 +83,5 @@ npx convex env set GMI_API_KEY <key>     # optional
 
 Without `GMI_API_KEY`, renders fall back to returning the source frame, so the
 full reactive pipeline still demos end to end.
+
+hi
