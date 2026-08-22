@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { ConvexClientProvider } from '@/components/ConvexClientProvider';
@@ -15,10 +15,14 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'AI Photobooth',
-  description: 'AI Photobooth',
-  icons: {
-    icon: '/convex.svg',
-  },
+  description: 'Control the booth camera and create an AI-styled photo from your phone.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#ffffff',
 };
 
 export default function RootLayout({
