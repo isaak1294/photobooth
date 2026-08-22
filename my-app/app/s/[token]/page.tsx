@@ -5,6 +5,8 @@ import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import { useRef, useState } from 'react';
 import { CaptureStatus } from '@/components/phone/CaptureStatus';
 import { PhotoGallery } from '@/components/phone/PhotoGallery';
+import { RenderResult } from '@/components/phone/RenderResult';
+import { StylePicker } from '@/components/phone/StylePicker';
 import { api } from '../../../convex/_generated/api';
 
 // The phone surface, opened from the QR at /s/<token>. Everything here is a live
@@ -12,14 +14,20 @@ import { api } from '../../../convex/_generated/api';
 export default function PhonePage() {
   const token = useParams().token as string;
   const session = useQuery(api.sessions.getSession, { token });
-  const styles = useQuery(api.styles.listStyles, {}) ?? [];
+  const stylesQuery = useQuery(api.styles.listStyles, {});
+  const styles = stylesQuery ?? [];
   const requestCapture = useMutation(api.captures.requestCapture);
   const requestRender = useMutation(api.renders.requestRender);
   const connectionState = useConvexConnectionState();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
+  const [isRenderSubmitting, setIsRenderSubmitting] = useState(false);
+  const [renderSubmissionError, setRenderSubmissionError] = useState<string | null>(null);
+  const [lastRequestedRenderId, setLastRequestedRenderId] = useState<string | null>(null);
   const submissionLock = useRef(false);
+  const renderSubmissionLock = useRef(false);
   const isReconnecting = connectionState.hasEverConnected && !connectionState.isWebSocketConnected;
 
   if (session === undefined) return <Centered>Loading…</Centered>;
@@ -32,7 +40,19 @@ export default function PhonePage() {
     .find((photo) => photo.url !== null);
   const selectedPhoto =
     photos.find((photo) => photo._id === selectedPhotoId) ?? latestAvailablePhoto ?? photos[photos.length - 1];
+  const selectedStyle = styles.find((style) => style._id === selectedStyleId);
   const styleName = (id: string) => styles.find((s) => s._id === id)?.name ?? 'Style';
+  const rendersForSelectedPhoto = selectedPhoto
+    ? session.renders.filter((render) => render.photoId === selectedPhoto._id)
+    : [];
+  const latestRender = rendersForSelectedPhoto[rendersForSelectedPhoto.length - 1] ?? null;
+  const activeRender = rendersForSelectedPhoto
+    .slice()
+    .reverse()
+    .find((render) => render.status === 'queued' || render.status === 'processing');
+  const renderRequestAwaitingSubscription =
+    lastRequestedRenderId !== null && !session.renders.some((render) => render._id === lastRequestedRenderId);
+  const isGenerating = isRenderSubmitting || renderRequestAwaitingSubscription || activeRender !== undefined;
 
   // Drive the button off the Pi's real capture status (via the subscription).
   const capture = session.capture;
@@ -66,6 +86,35 @@ export default function PhonePage() {
     }
   }
 
+  async function submitRender(styleId: (typeof styles)[number]['_id']) {
+    if (!selectedPhoto || renderSubmissionLock.current || isGenerating || isReconnecting) return;
+
+    renderSubmissionLock.current = true;
+    setIsRenderSubmitting(true);
+    setRenderSubmissionError(null);
+
+    try {
+      const renderId = await requestRender({ token, photoId: selectedPhoto._id, styleId });
+      setLastRequestedRenderId(renderId);
+    } catch (error) {
+      console.error('Render request failed', error);
+      setRenderSubmissionError("We couldn't start the AI edit. Please try again.");
+    } finally {
+      renderSubmissionLock.current = false;
+      setIsRenderSubmitting(false);
+    }
+  }
+
+  function onSelectPhoto(photoId: string) {
+    setSelectedPhotoId(photoId);
+    setRenderSubmissionError(null);
+  }
+
+  function onSelectStyle(styleId: string) {
+    setSelectedStyleId(styleId);
+    setRenderSubmissionError(null);
+  }
+
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-5">
       <header className="flex items-center justify-between">
@@ -86,46 +135,33 @@ export default function PhonePage() {
       {submissionError && <p className="text-center text-sm text-red-500">{submissionError}</p>}
       <CaptureStatus status={capture?.status ?? null} isReconnecting={isReconnecting} />
 
-      <PhotoGallery photos={photos} selectedPhotoId={selectedPhoto?._id ?? null} onSelect={setSelectedPhotoId} />
+      <PhotoGallery photos={photos} selectedPhotoId={selectedPhoto?._id ?? null} onSelect={onSelectPhoto} />
 
       {selectedPhoto?.url && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-slate-500">Choose a style</h2>
-          <div className="flex flex-wrap gap-2">
-            {styles.map((s) => (
-              <button
-                key={s._id}
-                onClick={() => void requestRender({ token, photoId: selectedPhoto._id, styleId: s._id })}
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
-        </section>
+        <StylePicker
+          styles={styles}
+          selectedStyleId={selectedStyleId}
+          isLoading={stylesQuery === undefined}
+          isGenerating={isGenerating}
+          isDisabled={isGenerating || isReconnecting}
+          error={renderSubmissionError}
+          onSelect={onSelectStyle}
+          onGenerate={() => {
+            if (selectedStyle) void submitRender(selectedStyle._id);
+          }}
+        />
       )}
 
-      {session.renders.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-slate-500">Renders</h2>
-          {session.renders
-            .slice()
-            .reverse()
-            .map((r) => (
-              <div key={r._id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-                <div className="mb-2 text-sm font-medium">{styleName(r.styleId)}</div>
-                {r.status === 'done' && r.outputUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={r.outputUrl} alt="render" className="w-full rounded-lg" />
-                ) : r.status === 'failed' ? (
-                  <div className="text-sm text-red-500">Failed: {r.error}</div>
-                ) : (
-                  <div className="text-sm text-slate-500">Rendering… ({r.status})</div>
-                )}
-              </div>
-            ))}
-        </section>
-      )}
+      <RenderResult
+        render={latestRender}
+        styleName={latestRender ? styleName(latestRender.styleId) : 'AI'}
+        retryDisabled={isGenerating || isReconnecting}
+        onRetry={() => {
+          if (!latestRender) return;
+          setSelectedStyleId(latestRender.styleId);
+          void submitRender(latestRender.styleId);
+        }}
+      />
     </main>
   );
 }
