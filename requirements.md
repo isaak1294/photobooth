@@ -11,7 +11,7 @@
 
 ## 0. Overview
 
-A Raspberry Pi photobooth captures photos at an event. Each session is issued a short-lived access code (shown as a QR code). Guests scan the code on their own phone, view their photos, download them, and re-render them in AI-generated styles.
+A Raspberry Pi photobooth captures photos at an event. Each ready booth session is issued a short-lived access code (shown as a QR code on the booth screen). Guests scan the code on their own phone, use the phone web app to trigger the Pi camera, watch the captured photos appear live, download them, and re-render them in AI-generated styles. The phone never takes the booth photo; it is the remote control and gallery for the Pi camera.
 
 Convex is the entire backend: database, file storage, serverless functions, job scheduling, and the sync engine that pushes results to clients. There is no separate API server, object store, queue, or WebSocket layer.
 
@@ -19,8 +19,8 @@ Convex is the entire backend: database, file storage, serverless functions, job 
 
 | Component | Runs on | Purpose |
 |---|---|---|
-| Booth capture app | Raspberry Pi | Live preview, countdown, capture, upload, QR display |
-| Guest web app | Guest's phone browser | Gallery, download, style selection — subscribed to Convex |
+| Booth capture app | Raspberry Pi | QR display, live preview, remote capture handling, countdown, capture, upload |
+| Guest web app | Guest's phone browser | Remote shutter, capture state, gallery, download, style selection — subscribed to Convex |
 | Convex deployment | Convex cloud | Schema, functions, file storage, scheduler, crons |
 | Style render worker | Convex action → GMI Cloud Inference Engine | AI image-to-image transformation |
 
@@ -28,12 +28,14 @@ Convex is the entire backend: database, file storage, serverless functions, job 
 
 **Primary flow**
 
-1. Guest taps the trigger → countdown → N frames captured on the Pi
-2. Pi POSTs frames to a Convex HTTP action; session code + QR render on the booth screen
-3. Guest scans → web app opens, subscribes to the session's photos
-4. Guest picks a style → mutation records the job → scheduler fires an action → action calls the image model → result written back by a mutation
-5. The styled image appears on the guest's phone with no refresh, no polling
-6. A cron purges sessions after the retention window
+1. The ready booth displays a QR code and short code for a fresh session
+2. Guest scans → web app opens and subscribes to that session's capture state, photos, and renders
+3. Guest taps **Take Photo** on the phone → a mutation records a capture request for the paired Pi
+4. The Pi receives the request → booth-screen countdown → N frames captured by the Pi camera
+5. Pi POSTs each frame to a Convex HTTP action → photos appear on the phone as they upload, without a refresh
+6. Guest picks a photo and style → mutation records the render job → scheduler fires an action → action calls the image model → result written back by a mutation
+7. The styled image appears on the guest's phone and booth screen with no refresh, no polling
+8. A cron purges sessions after the retention window
 
 ---
 
@@ -58,8 +60,8 @@ A teammate's Pi is the target device. Requirements adapt to that unit rather tha
 
 ### 1.3 Display & Input
 
-- **HW-10 (DEMO)** Any HDMI display the Pi can drive, running the booth UI fullscreen. Touchscreen preferred; a monitor plus physical button is fine.
-- **HW-11 (DEMO)** Trigger input: GPIO button (debounced) or keyboard/touch fallback. A physical button reads far better to judges than a mouse click.
+- **HW-10 (DEMO)** Any HDMI display the Pi can drive, running the booth UI fullscreen. Touch capability is optional because the guest's phone is the primary control surface.
+- **HW-11 (DEMO)** Primary trigger input is the **Take Photo** control in the guest's phone web app. Keep a debounced GPIO button or keyboard control on the Pi as a demo fallback; it must enter the same capture state machine as a phone-triggered request rather than bypassing session state.
 - **HW-12 (V1)** Screen at adult eye level (~1.5 m to lens), positioned so the guest's eyeline lands near the lens.
 - **HW-13 (LATER)** Speaker or buzzer for countdown audio.
 
@@ -91,10 +93,10 @@ Two surfaces. Both are Convex clients, so both get live data for free — the bo
 
 - **FE-1 (DEMO)** Runs fullscreen with no browser chrome, no cursor, no reachable OS UI.
 - **FE-2 (DEMO)** Live camera preview, mirrored horizontally. Target ≥ 24 fps; accept lower on a Pi 4 rather than blocking on it.
-- **FE-3 (DEMO)** Visible countdown before each frame. Default 3 seconds.
+- **FE-3 (DEMO)** Visible countdown on the booth display before each frame after a phone or fallback trigger. Default 3 seconds. The phone mirrors the current capture state so the guest knows when to look at the Pi camera.
 - **FE-4 (DEMO)** Configurable 1–4 frames per session with an inter-frame gap.
-- **FE-5 (DEMO)** Handoff screen with QR code plus a human-readable short code (6 characters, unambiguous alphabet — no O/0, I/1).
-- **FE-6 (DEMO)** Auto-reset to the attract screen after inactivity (default 45 s). No previous guest's photos or code remain visible after reset.
+- **FE-5 (DEMO)** Ready/pairing screen displays the session QR code plus a human-readable short code (6 characters, unambiguous alphabet — no O/0, I/1) **before capture**. Scanning it opens the phone remote for that specific booth session.
+- **FE-6 (DEMO)** Auto-reset after inactivity (default 45 s after the last interaction or completed render). Reset invalidates the old capture session, creates a fresh session, and displays a new QR code. No previous guest's photos or code remain visible on the booth.
 - **FE-7 (DEMO)** Attract screen with a clear call to action and a visible notice that photos are stored temporarily and processed by AI.
 - **FE-8 (DEMO)** Upload state indicated discreetly. Upload failures never block the guest or surface as raw errors.
 - **FE-9 (V1)** Review screen with Keep / Retake and a 15 s auto-accept timeout.
@@ -116,6 +118,9 @@ Two surfaces. Both are Convex clients, so both get live data for free — the bo
 - **FE-22 (V1)** Download-all as a zip.
 - **FE-23 (V1)** Web Share API integration with file sharing, falling back to download.
 - **FE-24 (LATER)** Installable PWA; SMS/email delivery of the session link.
+- **FE-25 (DEMO)** The session page initially presents a prominent **Take Photo** button. Pressing it requests capture by the paired Pi camera; it must not open or use the phone camera.
+- **FE-26 (DEMO)** After a capture request, the phone renders the subscribed capture state directly: `requested`, `counting_down`, `capturing`, `uploading`, `complete`, or `failed`. The button is disabled while a request is active, and duplicate taps cannot create overlapping captures.
+- **FE-27 (DEMO)** Captured frames appear in the same phone session as the Pi uploads them. The guest selects one frame before the style picker and render controls become active.
 
 ---
 
@@ -161,14 +166,21 @@ Two surfaces. Both are Convex clients, so both get live data for free — the bo
 - **BE-46 (V1)** Per-request cost recorded on the `renders` document, so per-event spend (BE-17) is measured rather than estimated.
 - **BE-47 (LATER)** Dedicated GPU endpoints or a custom img2img stack on GMI's H100/H200 instances, if fine-tuned or LoRA-driven styles become the differentiator. Explicitly out of scope for the hackathon: provisioning is measured in days and the guest-visible result is identical. Revisit only if GMI's judging criteria specifically reward use of their GPU infrastructure over their inference API.
 
-### 3.5 Reads & Sync
+### 3.5 Remote Capture Coordination
+
+- **BE-48 (DEMO)** A session is bound to one booth/device and carries capture state. The initial state is `ready`; subsequent states are `requested`, `counting_down`, `capturing`, `uploading`, `complete`, and `failed`. Capture state is returned by the same session query the phone subscribes to.
+- **BE-49 (DEMO)** `requestCapture(token)` is a mutation that validates the unexpired session, verifies its booth is ready, records a unique capture request, and changes capture state to `requested`. The transition is transactional so rapid or repeated taps cannot start overlapping captures.
+- **BE-50 (DEMO)** The Pi listens for authenticated capture commands addressed to its device. For each new request it acknowledges state transitions, performs the countdown and camera capture locally, then uploads frames through `/upload`. Request IDs are idempotent: reconnecting or receiving the same command twice must not take a second set of photos.
+- **BE-51 (DEMO)** The GPIO/keyboard fallback creates or claims the current booth session and follows the same capture request and acknowledgement path as the phone trigger, so photos still arrive in the session shown by the current QR.
+
+### 3.6 Reads & Sync
 
 - **BE-22 (DEMO)** Guest data is read through a query taking the session token as an argument and returning only that session's photos, renders, and styles. Token validation happens server-side in the query; never filter on the client.
 - **BE-23 (DEMO)** Image URLs come from `ctx.storage.getUrl(storageId)` at query time.
 - **BE-24 (DEMO)** Every function that should not be publicly callable is defined with `internalQuery` / `internalMutation` / `internalAction`. Anything exported as public is callable by any client with the deployment URL.
 - **BE-25 (V1)** Rate limiting per session token on render submissions.
 
-### 3.6 Privacy & Retention
+### 3.7 Privacy & Retention
 
 - **BE-26 (DEMO)** Consent notice shown at the booth before capture, stating that photos are stored temporarily and processed by a third-party AI service. `consentAt` recorded on the session.
 - **BE-27 (DEMO)** Every session has an `expiresAt`. Expired sessions return "expired", not photos.
@@ -176,14 +188,14 @@ Two surfaces. Both are Convex clients, so both get live data for free — the bo
 - **BE-29 (V1)** Guest-triggered "delete my photos" mutation reachable from the web app.
 - **BE-30 (V1)** Storing images of identifiable faces triggers privacy-law obligations in most jurisdictions — confirm applicable requirements (in Canada, PIPEDA and provincial equivalents) before any public event, and select an image-model provider whose terms permit this use and prohibit training on submitted images.
 
-### 3.7 Operations
+### 3.8 Operations
 
 - **BE-31 (DEMO)** Separate dev and prod deployments. The Pi points at prod for the demo; nobody deploys during judging.
 - **BE-32 (V1)** Booth heartbeat mutation with device health (temperature, disk, queue depth, last capture), surfaced in an admin view.
 - **BE-33 (V1)** Metrics on capture count, upload success rate, render success rate, render latency, per-event AI cost.
 - **BE-34 (LATER)** Admin UI for events, device assignment, active style set, quotas, retention.
 
-### 3.8 Convex Constraints to Design Around
+### 3.9 Convex Constraints to Design Around
 
 - **BE-35** Actions time out at 10 minutes and run with 512 MB (Node runtime) or 64 MB (Convex runtime) memory. Image work is fine; large batch processing is not.
 - **BE-36** HTTP action request and response bodies are capped at 20 MB.
@@ -209,10 +221,11 @@ Two surfaces. Both are Convex clients, so both get live data for free — the bo
 
 0. **GMI model bake-off (BE-43)** — one hour, one teammate's face, curl. Everything downstream assumes a model that preserves identity inside your latency budget; find out on hour one, not hour thirty.
 1. **Convex schema + a fake render action** that waits 3 seconds and returns the input image. Get the reactive loop visible end to end before any AI is involved.
-2. **Guest web app** against seeded data. Prove that a render row changing status updates the phone with no polling.
-3. **Real GMI call** swapped in behind the same action, using the winner from step 0.
-4. **Pi capture → HTTP action upload.** Hardware last, because it is the part most likely to eat a day.
-5. **Booth QR + attract loop**, then the live booth-screen render display (FE-10) if time remains.
+2. **Guest web app** against seeded data. Prove that capture state and photos update on the phone, then that a render row changing status updates it with no polling.
+3. **Phone trigger → fake Pi acknowledgement.** Wire the QR session to `requestCapture` and simulate the capture-state transitions before involving hardware.
+4. **Real GMI call** swapped in behind the same action, using the winner from step 0.
+5. **Pi command listener + capture → HTTP action upload.** Replace the fake acknowledgement with the Pi while keeping the same session state machine.
+6. **Booth ready QR + countdown loop**, then the live booth-screen render display (FE-10) if time remains.
 
 Fallback if the Pi fights back on demo day: the same HTTP action accepts uploads from a laptop webcam. Keep that path working — it costs nothing and it is the difference between a demo and no demo.
 
@@ -223,4 +236,4 @@ Fallback if the Pi fights back on demo day: the same HTTP action accepts uploads
 1. Which specific GMI edit model wins the bake-off, and what its measured latency and per-request cost are — these set the quota defaults (BE-16) and the spend cap (BE-17). Also confirm the provider's terms on training with submitted images before a public event (BE-30).
 2. Which camera is actually on the teammate's Pi, and which Pi model? Determines `picamera2` vs V4L2 and the achievable preview framerate.
 3. Expected demo throughput — is this one guest at a time in front of judges, or open to a room?
-4. Is the booth screen a touchscreen, or monitor plus button?
+4. What display is used for the booth, and which local fallback trigger (GPIO button or keyboard) will be available if phone-triggered capture fails?
