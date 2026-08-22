@@ -4,9 +4,10 @@ import { useParams } from 'next/navigation';
 import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CapturePanel, type CapturePhase } from '@/components/phone/CapturePanel';
-import { PhotoGallery } from '@/components/phone/PhotoGallery';
-import { RenderResult } from '@/components/phone/RenderResult';
+import { GenerationBanner, type BannerState } from '@/components/phone/GenerationBanner';
+import { PhotoGallery, type PhotoVariant } from '@/components/phone/PhotoGallery';
 import { StylePicker, type ThemeJob } from '@/components/phone/StylePicker';
+import { WelcomeSplash } from '@/components/phone/WelcomeSplash';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 
@@ -16,6 +17,8 @@ import type { Id } from '../../../convex/_generated/dataModel';
 const COUNTDOWN_SECONDS = 3;
 // How long "Saved ✓" lingers before the next burst shot / back to idle.
 const SAVED_FLASH_MS = 1200;
+// How long the welcome splash holds before fading (skipped on reloads).
+const WELCOME_MS = 2200;
 
 // The phone surface, opened from the QR at /s/<token>. Everything here is a live
 // Convex subscription — photos, theme derivation, and render results appear with
@@ -37,6 +40,24 @@ export default function PhonePage() {
   const connectionState = useConvexConnectionState();
   const isReconnecting = connectionState.hasEverConnected && !connectionState.isWebSocketConnected;
 
+  // --- welcome splash ----------------------------------------------------------
+  // Rendered on the server too (it covers initial load), so the first paint
+  // matches SSR; the timers then fade it out — instantly on a repeat visit.
+  const [splash, setSplash] = useState<'showing' | 'leaving' | 'gone'>('showing');
+  useEffect(() => {
+    const key = `pb-welcome-${token}`;
+    const seen = window.sessionStorage.getItem(key) === '1';
+    window.sessionStorage.setItem(key, '1');
+    const showMs = seen ? 0 : WELCOME_MS;
+    const t1 = window.setTimeout(() => setSplash('leaving'), showMs);
+    const t2 = window.setTimeout(() => setSplash('gone'), showMs + 500);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [token]);
+  const splashEl = splash !== 'gone' ? <WelcomeSplash stage={splash === 'leaving' ? 'leaving' : 'showing'} /> : null;
+
   // --- capture state ---------------------------------------------------------
   // Set on press: the capture request the session showed BEFORE this press, so
   // "starting" can be told apart from that stale request's terminal status.
@@ -57,11 +78,14 @@ export default function PhonePage() {
   // photos exist than when the guest chose, the default (newest) wins again.
   const [photoChoice, setPhotoChoice] = useState<{ photoId: string; countAtSelection: number } | null>(null);
   const [styleChoice, setStyleChoice] = useState<string | null>(null);
+  // Which face of the selected photo the hero shows (original vs an AI render).
+  const [variantChoice, setVariantChoice] = useState<{ photoId: string; key: string } | null>(null);
 
   // --- render request state ----------------------------------------------------
   const [isRenderSubmitting, setIsRenderSubmitting] = useState(false);
   const [renderSubmissionError, setRenderSubmissionError] = useState<string | null>(null);
   const [lastRequestedRenderId, setLastRequestedRenderId] = useState<string | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const renderSubmissionLock = useRef(false);
 
   // --- custom theme state --------------------------------------------------------
@@ -125,8 +149,20 @@ export default function PhonePage() {
     return () => window.clearTimeout(timer);
   }, [capture, pressState, dismissedKey, fireCapture]);
 
-  if (session === undefined) return <Centered>Loading…</Centered>;
-  if (session === null) return <Centered>Session not found — scan the booth&apos;s QR again.</Centered>;
+  if (session === undefined)
+    return (
+      <>
+        {splashEl}
+        <Centered>Loading…</Centered>
+      </>
+    );
+  if (session === null)
+    return (
+      <>
+        {splashEl}
+        <Centered>Session not found — scan the booth&apos;s QR again.</Centered>
+      </>
+    );
 
   // --- derived capture phase ---------------------------------------------------
   const phase: CapturePhase = (() => {
@@ -165,6 +201,9 @@ export default function PhonePage() {
 
   // --- derived selections --------------------------------------------------------
   const photos = session.photos;
+  const styles = stylesQuery ?? [];
+  const styleNameOf = (id: string) => styles.find((s) => s._id === id)?.name ?? 'Style';
+
   const latestAvailablePhoto = photos
     .slice()
     .reverse()
@@ -175,35 +214,117 @@ export default function PhonePage() {
       : undefined;
   const selectedPhoto = explicitPhoto ?? latestAvailablePhoto ?? photos[photos.length - 1];
 
-  const styles = stylesQuery ?? [];
+  // Per-photo render stats for the ✦ thumbnail badges.
+  const renderStats = new Map<string, { done: number; busy: boolean }>();
+  for (const render of session.renders) {
+    const stats = renderStats.get(render.photoId) ?? { done: 0, busy: false };
+    if (render.status === 'done' && render.outputUrl !== null) stats.done += 1;
+    if (render.status === 'queued' || render.status === 'processing') stats.busy = true;
+    renderStats.set(render.photoId, stats);
+  }
+  const galleryPhotos = photos.map((photo) => ({
+    _id: photo._id,
+    url: photo.url,
+    aiCount: renderStats.get(photo._id)?.done ?? 0,
+    aiBusy: renderStats.get(photo._id)?.busy ?? false,
+  }));
+
+  const rendersForSelectedPhoto = selectedPhoto
+    ? session.renders.filter((render) => render.photoId === selectedPhoto._id)
+    : [];
+  const doneRendersForSelected = rendersForSelectedPhoto.filter(
+    (render) => render.status === 'done' && render.outputUrl !== null,
+  );
+
+  // Hero variants: the original frame plus every finished AI version. Default
+  // to the newest AI version so styled photos are immediately visible.
+  const variants: PhotoVariant[] = selectedPhoto?.url
+    ? [
+        { key: 'original', label: 'Original', url: selectedPhoto.url },
+        ...doneRendersForSelected.map((render) => ({
+          key: render._id as string,
+          label: styleNameOf(render.styleId),
+          url: render.outputUrl!,
+        })),
+      ]
+    : [];
+  const defaultVariantKey =
+    doneRendersForSelected.length > 0
+      ? (doneRendersForSelected[doneRendersForSelected.length - 1]._id as string)
+      : 'original';
+  const selectedVariantKey =
+    variantChoice !== null &&
+    selectedPhoto !== undefined &&
+    variantChoice.photoId === selectedPhoto._id &&
+    variants.some((v) => v.key === variantChoice.key)
+      ? variantChoice.key
+      : defaultVariantKey;
+
+  const activeRenders = session.renders.filter(
+    (render) => render.status === 'queued' || render.status === 'processing',
+  );
+  const lastRequestedRender =
+    lastRequestedRenderId !== null
+      ? (session.renders.find((render) => render._id === lastRequestedRenderId) ?? null)
+      : null;
+  const renderRequestAwaitingSubscription = lastRequestedRenderId !== null && lastRequestedRender === null;
+  const isGenerating = isRenderSubmitting || renderRequestAwaitingSubscription || activeRenders.length > 0;
+
+  const latestRenderForSelected = rendersForSelectedPhoto[rendersForSelectedPhoto.length - 1] ?? null;
+  const failedRenderForSelected =
+    latestRenderForSelected?.status === 'failed' ? latestRenderForSelected : null;
+
+  // --- generation banner ---------------------------------------------------------
+  const bannerState: BannerState =
+    activeRenders.length > 0
+      ? {
+          kind: 'working',
+          label:
+            activeRenders.length === 1
+              ? `Creating your ${styleNameOf(activeRenders[0].styleId)} photo…`
+              : `Creating ${activeRenders.length} AI photos…`,
+        }
+      : !bannerDismissed && lastRequestedRender?.status === 'done'
+        ? { kind: 'ready', label: `Your ${styleNameOf(lastRequestedRender.styleId)} photo is ready — tap to view` }
+        : !bannerDismissed && lastRequestedRender?.status === 'failed'
+          ? { kind: 'failed', label: `The ${styleNameOf(lastRequestedRender.styleId)} edit didn't finish — tap to retry` }
+          : null;
+
+  function selectPhoto(photoId: string) {
+    setPhotoChoice({ photoId, countAtSelection: photos.length });
+    setRenderSubmissionError(null);
+  }
+
+  function onBannerTap() {
+    if (bannerState === null) return;
+    if (bannerState.kind === 'working') {
+      selectPhoto(activeRenders[0].photoId);
+      return;
+    }
+    if (lastRequestedRender !== null) {
+      selectPhoto(lastRequestedRender.photoId);
+      if (bannerState.kind === 'ready') {
+        setVariantChoice({ photoId: lastRequestedRender.photoId, key: lastRequestedRender._id });
+      }
+    }
+    setBannerDismissed(true);
+  }
+
+  const themeJob: ThemeJob = (() => {
+    if (themeUploading) return { status: 'uploading' };
+    const active = pendingThemeId !== null && themeRequest?.requestId === pendingThemeId ? themeRequest : null;
+    if (active?.status === 'pending' || active?.status === 'processing') return { status: 'deriving' };
+    if (active?.status === 'failed') return { status: 'failed', error: active.error };
+    if (uploadError !== null) return { status: 'failed', error: uploadError };
+    return null;
+  })();
+  const themeBusy = themeJob?.status === 'uploading' || themeJob?.status === 'deriving';
+
   const activeThemeRequest =
     pendingThemeId !== null && themeRequest?.requestId === pendingThemeId ? themeRequest : null;
   const themeStyleId = activeThemeRequest?.status === 'done' ? activeThemeRequest.styleId : null;
   const selectedStyleId = styleChoice ?? themeStyleId;
   const selectedStyle = styles.find((style) => style._id === selectedStyleId);
-  const styleNameOf = (id: string) => styles.find((s) => s._id === id)?.name ?? 'Style';
-
-  const themeJob: ThemeJob = themeUploading
-    ? { status: 'uploading' }
-    : activeThemeRequest?.status === 'pending' || activeThemeRequest?.status === 'processing'
-      ? { status: 'deriving' }
-      : activeThemeRequest?.status === 'failed'
-        ? { status: 'failed', error: activeThemeRequest.error }
-        : uploadError !== null
-          ? { status: 'failed', error: uploadError }
-          : null;
-  const themeBusy = themeJob?.status === 'uploading' || themeJob?.status === 'deriving';
-
-  const rendersForSelectedPhoto = selectedPhoto
-    ? session.renders.filter((render) => render.photoId === selectedPhoto._id)
-    : [];
-  const activeRender = rendersForSelectedPhoto
-    .slice()
-    .reverse()
-    .find((render) => render.status === 'queued' || render.status === 'processing');
-  const renderRequestAwaitingSubscription =
-    lastRequestedRenderId !== null && !session.renders.some((render) => render._id === lastRequestedRenderId);
-  const isGenerating = isRenderSubmitting || renderRequestAwaitingSubscription || activeRender !== undefined;
 
   // --- handlers --------------------------------------------------------------
   function onCapture() {
@@ -221,6 +342,9 @@ export default function PhonePage() {
     renderSubmissionLock.current = true;
     setIsRenderSubmitting(true);
     setRenderSubmissionError(null);
+    setBannerDismissed(false);
+    // Let the hero flip to the new result when it lands.
+    setVariantChoice(null);
 
     try {
       const renderId = await requestRender({ token, photoId: selectedPhoto._id, styleId });
@@ -263,13 +387,16 @@ export default function PhonePage() {
   }
 
   return (
-    <main className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 overflow-x-hidden px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+    <main className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 overflow-x-clip px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+      {splashEl}
+      <GenerationBanner state={bannerState} onTap={onBannerTap} />
+
       <div
         aria-hidden
         className="pointer-events-none fixed -top-1/4 left-1/2 h-[90vh] w-[90vh] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(217,70,239,0.14),rgba(11,11,20,0)_65%)]"
       />
 
-      <header className="relative flex items-center justify-between">
+      <header className="relative flex items-center justify-between pt-[max(1.25rem,env(safe-area-inset-top))]">
         <h1 className="text-lg font-black tracking-tight">AI Photobooth</h1>
         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-xs text-white/70">
           {session.shortCode}
@@ -296,13 +423,34 @@ export default function PhonePage() {
         />
 
         <PhotoGallery
-          photos={photos}
+          photos={galleryPhotos}
           selectedPhotoId={selectedPhoto?._id ?? null}
-          onSelect={(photoId) => {
-            setPhotoChoice({ photoId, countAtSelection: photos.length });
-            setRenderSubmissionError(null);
+          onSelect={selectPhoto}
+          variants={variants}
+          selectedVariantKey={selectedVariantKey}
+          onSelectVariant={(key) => {
+            if (selectedPhoto) setVariantChoice({ photoId: selectedPhoto._id, key });
           }}
         />
+
+        {failedRenderForSelected && (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3" role="alert">
+            <p className="text-sm text-red-300">
+              The ✦ {styleNameOf(failedRenderForSelected.styleId)} edit didn&apos;t finish.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setStyleChoice(failedRenderForSelected.styleId);
+                void submitRender(failedRenderForSelected.styleId);
+              }}
+              disabled={isGenerating || isReconnecting}
+              className="mt-2 rounded-xl bg-red-500/80 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              Try again
+            </button>
+          </div>
+        )}
 
         {selectedPhoto?.url && (
           <StylePicker
@@ -323,16 +471,6 @@ export default function PhonePage() {
             onCreateTheme={(file) => void onCreateTheme(file)}
           />
         )}
-
-        <RenderResult
-          renders={rendersForSelectedPhoto}
-          styleNameOf={styleNameOf}
-          retryDisabled={isGenerating || isReconnecting}
-          onRetry={(styleId) => {
-            setStyleChoice(styleId);
-            void submitRender(styleId as (typeof styles)[number]['_id']);
-          }}
-        />
       </div>
     </main>
   );

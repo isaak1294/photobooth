@@ -16,6 +16,7 @@ Recipe that worked 2026-08-22. All commands from `my-app/`.
 
 ## Gotchas
 - **Snap chromium cannot read /tmp**: files for `setInputFiles` (theme upload) must live under `$HOME` (non-hidden path), else the in-page fetch dies with ERR_FILE_NOT_FOUND / "Failed to fetch". Clean up after.
+- **Zombie `next start` after rebuild**: if you rebuild while a `next start` is up, the old process keeps the port with a stale in-memory manifest → 500s on random chunks → hydration never finishes (symptom: effects don't run, e.g. splash never fades). Before every restart: `ss -ltnp | grep 3200`, `kill -9` the exact pid, confirm the port is free, and check the start log for EADDRINUSE. Never `pkill -f "next start -p 3200"` — it matches your own shell and kills your command (exit 144).
 - Kill the fake Pi when done — a leftover listener double-claims captures when the real Pi runs.
 - Storage upload URLs from the local backend allow CORS from any localhost origin — a "Failed to fetch" there is NOT CORS, it's the file-read issue above.
 
