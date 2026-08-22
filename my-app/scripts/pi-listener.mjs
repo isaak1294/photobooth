@@ -33,6 +33,24 @@ if (!CONVEX_URL || !SITE_URL || !SECRET) {
 const client = new ConvexClient(CONVEX_URL);
 const inFlight = new Set();
 
+// rpicam-jpeg needs EXCLUSIVE access to the sensor. `inFlight` dedupes by
+// requestId, but it can't stop two *different* requests from overlapping: the
+// subscription re-fires while a shot is still running, and that callback starts
+// its own capture. Two concurrent shots make both fail — "Pipeline handler in
+// use by another process" and "Failed to start streaming: Broken pipe". Funnel
+// every capture through one promise chain so they queue instead of racing.
+let cameraChain = Promise.resolve();
+function withCamera(job) {
+  const result = cameraChain.then(job, job);
+  // Swallow into the chain only — a failed shot must not wedge the queue, but
+  // the caller still sees its own rejection.
+  cameraChain = result.then(
+    () => {},
+    () => {},
+  );
+  return result;
+}
+
 client.onUpdate(anyApi.captures.pendingCaptures, { secret: SECRET }, async (rows) => {
   for (const { requestId, token } of rows) {
     if (inFlight.has(requestId)) continue;
@@ -40,7 +58,7 @@ client.onUpdate(anyApi.captures.pendingCaptures, { secret: SECRET }, async (rows
     try {
       // Claim first so a re-fired subscription doesn't double-shoot.
       await client.mutation(anyApi.captures.markCaptured, { secret: SECRET, requestId });
-      const bytes = await capturePhoto();
+      const bytes = await withCamera(() => capturePhoto(requestId));
       await uploadPhoto(token, bytes);
       console.log(`✅ captured + uploaded for ${token}`);
     } catch (err) {
@@ -51,11 +69,14 @@ client.onUpdate(anyApi.captures.pendingCaptures, { secret: SECRET }, async (rows
   }
 });
 
-async function capturePhoto() {
+async function capturePhoto(requestId) {
   // The real camera command. On Raspberry Pi OS (Bookworm): rpicam-jpeg
-  // (older releases: libcamera-jpeg). Add your 3-2-1 countdown + light around
-  // this call. 1080p is plenty — smaller frames also render faster on GMI.
-  const path = '/tmp/frame.jpg';
+  // (older releases: libcamera-jpeg). The booth runs the 3-2-1 countdown before
+  // the request is even written, so this shoots immediately. 1080p is plenty —
+  // smaller frames also render faster on GMI.
+  // Per-request path: a shared /tmp/frame.jpg would let a queued shot read the
+  // previous frame's bytes if anything ever overlapped.
+  const path = `/tmp/frame-${requestId}.jpg`;
   await execFileP('rpicam-jpeg', ['-o', path, '-t', '3000', '--width', '1920', '--height', '1080', '-n']);
   const bytes = await readFile(path);
   await unlink(path).catch(() => {});
