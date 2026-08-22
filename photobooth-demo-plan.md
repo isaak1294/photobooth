@@ -99,3 +99,12 @@ Two rules for demo day: **do not deploy during judging**, and pre-warm the model
 - **GMI** — the transformation itself, plus one line on the model choice: an edit model rather than text-to-image, because the guest has to recognise their own face. It shows you picked deliberately from the library instead of grabbing the first image endpoint.
 
 Time-check the whole thing out loud at least twice. Three minutes is much shorter than it reads.
+
+
+## 6. Executive Summaries
+
+Hardware. A Raspberry Pi drives a camera, a physical button, a light, and a display — and does nothing else. All intelligence lives in the cloud, which makes the booth a deliberately dumb capture-and-display terminal: it takes a photo, posts it over HTTPS, and shows what the backend tells it to show. That choice keeps the demo independent of which Pi model or camera the team happens to have, since nothing on the device is compute-bound. The single hard dependency is network, so the booth runs on wired ethernet with a pre-tested phone hotspot as fallback, and the same upload endpoint accepts frames from a laptop webcam if the hardware fails entirely.
+
+Frontend. Two surfaces, both Convex clients, both live. The booth screen runs a fullscreen kiosk loop — preview, countdown, capture, QR handoff, auto-reset — while the guest's phone opens straight from the QR into a token-gated gallery with a style picker and a before/after view. Neither surface polls for anything: both subscribe to the session's data and re-render when it changes. The result is the demo's centerpiece — a styled photo appearing on the phone and the booth screen at the same instant, with no refresh anywhere.
+
+Backend. Convex is the entire backend: four tables and four functions, with no separate API server, object store, queue, or socket layer. A guest's style request is a mutation that writes a renders row and schedules an action; the action calls a GMI Cloud image-editing model, stores the output, and writes the result back through another mutation. That one document is simultaneously the job record and the thing both screens are subscribed to, which is why the UI needs no status endpoint. Because Convex deliberately does not retry actions that have side effects, every failure path is caught and written back as a visible failed state rather than leaving a job silently stuck.
