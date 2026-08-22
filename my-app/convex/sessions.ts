@@ -1,5 +1,6 @@
 import { v } from 'convex/values';
 import { mutation, query, internalMutation } from './_generated/server';
+import { captureStatus } from './captureStatus';
 
 // Create a new booth run. The `token` is a random string carried in the QR link
 // — never a sequential id, so a stale QR from a test run can't surface someone
@@ -32,6 +33,16 @@ export const getSession = query({
     v.object({
       sessionId: v.id('sessions'),
       shortCode: v.string(),
+      // The latest capture request for this session, so the phone can watch the
+      // Pi's real progress (counting down → capturing → uploading → complete).
+      capture: v.union(
+        v.null(),
+        v.object({
+          requestId: v.id('captureRequests'),
+          status: captureStatus,
+          error: v.union(v.string(), v.null()),
+        }),
+      ),
       photos: v.array(
         v.object({
           _id: v.id('photos'),
@@ -64,6 +75,20 @@ export const getSession = query({
       .unique();
     if (session === null) return null;
 
+    // Latest capture request (most recently created) for this session.
+    const latestCapture = await ctx.db
+      .query('captureRequests')
+      .withIndex('by_session', (q) => q.eq('sessionId', session._id))
+      .order('desc')
+      .first();
+    const capture = latestCapture
+      ? {
+          requestId: latestCapture._id,
+          status: latestCapture.status,
+          error: latestCapture.error ?? null,
+        }
+      : null;
+
     const photoDocs = await ctx.db
       .query('photos')
       .withIndex('by_session', (q) => q.eq('sessionId', session._id))
@@ -92,7 +117,7 @@ export const getSession = query({
       })),
     );
 
-    return { sessionId: session._id, shortCode: session.shortCode, photos, renders };
+    return { sessionId: session._id, shortCode: session.shortCode, capture, photos, renders };
   },
 });
 
