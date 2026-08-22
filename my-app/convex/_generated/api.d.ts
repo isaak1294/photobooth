@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as captureStatus from "../captureStatus.js";
 import type * as captures from "../captures.js";
 import type * as http from "../http.js";
 import type * as renders from "../renders.js";
@@ -21,6 +22,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  captureStatus: typeof captureStatus;
   captures: typeof captures;
   http: typeof http;
   renders: typeof renders;

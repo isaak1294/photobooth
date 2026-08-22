@@ -33,6 +33,9 @@ if (!CONVEX_URL || !SITE_URL || !SECRET) {
 const client = new ConvexClient(CONVEX_URL);
 const inFlight = new Set();
 
+const setStatus = (requestId, status, error) =>
+  client.mutation(anyApi.captures.updateCaptureStatus, { secret: SECRET, requestId, status, error });
+
 // rpicam-jpeg needs EXCLUSIVE access to the sensor. `inFlight` dedupes by
 // requestId, but it can't stop two *different* requests from overlapping: the
 // subscription re-fires while a shot is still running, and that callback starts
@@ -56,18 +59,37 @@ client.onUpdate(anyApi.captures.pendingCaptures, { secret: SECRET }, async (rows
     if (inFlight.has(requestId)) continue;
     inFlight.add(requestId);
     try {
-      // Claim first so a re-fired subscription doesn't double-shoot.
-      await client.mutation(anyApi.captures.markCaptured, { secret: SECRET, requestId });
+      // Advancing past `pending` also claims it (drops it from pendingCaptures),
+      // so a re-fired subscription won't double-shoot.
+      await setStatus(requestId, 'counting_down');
+      await countdown();
+      await setStatus(requestId, 'capturing');
       const bytes = await withCamera(() => capturePhoto(requestId));
+      await setStatus(requestId, 'uploading');
       await uploadPhoto(token, bytes);
-      console.log(`✅ captured + uploaded for ${token}`);
+      // Only mark complete AFTER the upload succeeded.
+      await setStatus(requestId, 'complete');
+      console.log(`✅ complete for ${token}`);
     } catch (err) {
-      console.error('capture failed:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      await setStatus(requestId, 'failed', msg).catch(() => {});
+      console.error('capture failed:', msg);
     } finally {
       inFlight.delete(requestId);
     }
   }
 });
+
+// Pre-shutter pause, for a surface that has no countdown of its own (the phone's
+// Take Picture button). The BOOTH runs its own 3-2-1 on screen before the
+// request is ever written, so counting again here just adds dead air after the
+// number hits 1 — set COUNTDOWN_MS=0 when the booth is the shutter.
+const COUNTDOWN_MS = Number(process.env.COUNTDOWN_MS ?? 3000);
+
+async function countdown() {
+  if (COUNTDOWN_MS <= 0) return;
+  await new Promise((r) => setTimeout(r, COUNTDOWN_MS));
+}
 
 async function capturePhoto(requestId) {
   // The real camera command. On Raspberry Pi OS (Bookworm): rpicam-jpeg

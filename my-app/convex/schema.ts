@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
+import { captureStatus } from './captureStatus';
 
 // AI Photobooth — four tables, per photobooth-demo-plan.md §2.
 // A session is created for one booth run; the QR handoff carries the random
@@ -32,13 +33,17 @@ export default defineSchema({
   }),
 
   // A "please take a photo now" signal. The phone's Take Picture button inserts
-  // a `pending` row; the Pi (subscribed to Convex, outbound-only) picks it up,
-  // shoots, uploads via /upload, then flips it to `done`. This is the remote
-  // shutter — no inbound connection to the Pi.
+  // a `pending` row; the Pi (subscribed to Convex, outbound-only) picks it up and
+  // drives it through the capture lifecycle, ending at `complete` (or `failed`).
+  // The phone observes this status live. Remote shutter — no inbound connection.
   captureRequests: defineTable({
     sessionId: v.id('sessions'),
-    status: v.union(v.literal('pending'), v.literal('done')),
-  }).index('by_status', ['status']),
+    status: captureStatus,
+    error: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index('by_status', ['status'])
+    .index('by_session', ['sessionId']),
 
   // One render job: source photo + chosen style -> styled output. This single
   // document is both the job state and what the phone + booth subscribe to.

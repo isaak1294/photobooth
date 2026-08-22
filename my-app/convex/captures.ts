@@ -1,7 +1,11 @@
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
+import { captureStatus, ACTIVE_CAPTURE_STATUSES } from './captureStatus';
 
 // PHONE -> writes the shutter signal. Called by the Take Picture button.
+// Rejects if this session already has a capture in flight, so a double-tap (or
+// two phones on the same session) can't queue overlapping shots. The whole
+// handler is one Convex transaction, so the read-then-insert is atomic.
 export const requestCapture = mutation({
   args: { token: v.string() },
   returns: v.id('captureRequests'),
@@ -11,7 +15,20 @@ export const requestCapture = mutation({
       .withIndex('by_token', (q) => q.eq('token', token))
       .unique();
     if (session === null) throw new Error('Unknown session token');
-    return await ctx.db.insert('captureRequests', { sessionId: session._id, status: 'pending' });
+
+    const existing = await ctx.db
+      .query('captureRequests')
+      .withIndex('by_session', (q) => q.eq('sessionId', session._id))
+      .collect();
+    if (existing.some((r) => ACTIVE_CAPTURE_STATUSES.includes(r.status))) {
+      throw new Error('A capture is already in progress for this session');
+    }
+
+    return await ctx.db.insert('captureRequests', {
+      sessionId: session._id,
+      status: 'pending',
+      updatedAt: Date.now(),
+    });
   },
 });
 
@@ -26,7 +43,8 @@ function assertBooth(secret: string) {
 }
 
 // PI subscribes to this. Returns each pending shutter request with the session
-// token to upload the resulting frame to.
+// token to upload the resulting frame to. Once the Pi advances a request past
+// `pending` (to counting_down) it drops out of here — that's the claim.
 export const pendingCaptures = query({
   args: { secret: v.string() },
   returns: v.array(v.object({ requestId: v.id('captureRequests'), token: v.string() })),
@@ -45,13 +63,37 @@ export const pendingCaptures = query({
   },
 });
 
-// PI marks a request handled — immediately on claim (to dedupe) and after upload.
-export const markCaptured = mutation({
-  args: { secret: v.string(), requestId: v.id('captureRequests') },
+// PI -> drives the capture through its lifecycle. Device-authenticated. The Pi
+// should only send `complete` after the frame has uploaded successfully, and
+// `failed` (with a short, safe message) on any capture/upload error.
+export const updateCaptureStatus = mutation({
+  args: {
+    secret: v.string(),
+    requestId: v.id('captureRequests'),
+    status: captureStatus,
+    error: v.optional(v.string()),
+  },
   returns: v.null(),
-  handler: async (ctx, { secret, requestId }) => {
+  handler: async (ctx, { secret, requestId, status, error }) => {
     assertBooth(secret);
-    await ctx.db.patch(requestId, { status: 'done' });
+    const request = await ctx.db.get(requestId);
+    if (request === null) throw new Error('Unknown capture request');
+
+    // Store a bounded error string so a caller can't stuff the doc with a huge
+    // payload; default a generic message on failure so the phone never shows a
+    // blank error.
+    const safeError =
+      error !== undefined
+        ? error.slice(0, 300)
+        : status === 'failed'
+          ? 'Capture failed'
+          : undefined;
+
+    await ctx.db.patch(requestId, {
+      status,
+      updatedAt: Date.now(),
+      ...(safeError !== undefined ? { error: safeError } : {}),
+    });
     return null;
   },
 });

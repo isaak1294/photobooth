@@ -3,7 +3,6 @@
 import { useParams } from 'next/navigation';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import { useState } from 'react';
 
 // The phone surface, opened from the QR at /s/<token>. Everything here is a live
 // Convex subscription — photos and render results appear with no refresh.
@@ -13,7 +12,6 @@ export default function PhonePage() {
   const styles = useQuery(api.styles.listStyles, {}) ?? [];
   const requestCapture = useMutation(api.captures.requestCapture);
   const requestRender = useMutation(api.renders.requestRender);
-  const [capturing, setCapturing] = useState(false);
 
   if (session === undefined) return <Centered>Loading…</Centered>;
   if (session === null) return <Centered>Session not found.</Centered>;
@@ -22,13 +20,23 @@ export default function PhonePage() {
   const latest = photos[photos.length - 1];
   const styleName = (id: string) => styles.find((s) => s._id === id)?.name ?? 'Style';
 
+  // Drive the button off the Pi's real capture status (via the subscription).
+  const capture = session.capture;
+  const ACTIVE = ['pending', 'counting_down', 'capturing', 'uploading'];
+  const isCapturing = capture !== null && ACTIVE.includes(capture.status);
+  const captureLabel: Record<string, string> = {
+    pending: 'Waiting for booth…',
+    counting_down: '3… 2… 1…',
+    capturing: 'Say cheese 📸',
+    uploading: 'Uploading…',
+  };
+  const buttonLabel = isCapturing ? captureLabel[capture!.status] : 'Take Picture';
+
   async function onCapture() {
-    setCapturing(true);
     try {
       await requestCapture({ token });
-    } finally {
-      // Brief feedback; the photo itself arrives via the subscription.
-      setTimeout(() => setCapturing(false), 2500);
+    } catch {
+      // e.g. a capture is already in progress — the status UI already reflects it.
     }
   }
 
@@ -43,11 +51,14 @@ export default function PhonePage() {
 
       <button
         onClick={onCapture}
-        disabled={capturing}
+        disabled={isCapturing}
         className="rounded-2xl bg-foreground px-6 py-5 text-lg font-semibold text-background disabled:opacity-50"
       >
-        {capturing ? 'Say cheese… 📸' : 'Take Picture'}
+        {buttonLabel}
       </button>
+      {capture?.status === 'failed' && (
+        <p className="text-center text-sm text-red-500">Capture failed: {capture.error}</p>
+      )}
 
       {photos.length === 0 ? (
         <p className="text-center text-slate-500">
