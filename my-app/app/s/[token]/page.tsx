@@ -3,11 +3,14 @@
 import { useParams } from 'next/navigation';
 import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AmberGlow } from '@/components/AmberGlow';
 import { CapturePanel, type CapturePhase } from '@/components/phone/CapturePanel';
 import { GenerationBanner, type BannerState } from '@/components/phone/GenerationBanner';
+import { MockPhone } from '@/components/phone/MockPhone';
 import { PhotoGallery, type PhotoVariant } from '@/components/phone/PhotoGallery';
 import { StylePicker, type ThemeJob } from '@/components/phone/StylePicker';
 import { WelcomeSplash } from '@/components/phone/WelcomeSplash';
+import { NOBOOTH } from '@/lib/nobooth';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 
@@ -29,6 +32,13 @@ const WELCOME_MS = 2200;
 // selection) and timer outcomes (flash dismissed), which keeps the booth's
 // lifecycle and the screen from ever disagreeing.
 export default function PhonePage() {
+  // nobooth mode: the whole surface runs against a simulated booth, so hooks
+  // that need a Convex provider never mount.
+  if (NOBOOTH) return <MockPhone />;
+  return <LivePhone />;
+}
+
+function LivePhone() {
   const token = useParams().token as string;
   const session = useQuery(api.sessions.getSession, { token });
   const stylesQuery = useQuery(api.styles.listStyles, { token });
@@ -78,7 +88,7 @@ export default function PhonePage() {
   // photos exist than when the guest chose, the default (newest) wins again.
   const [photoChoice, setPhotoChoice] = useState<{ photoId: string; countAtSelection: number } | null>(null);
   const [styleChoice, setStyleChoice] = useState<string | null>(null);
-  // Which face of the selected photo the hero shows (original vs an AI render).
+  // Which face of the selected photo the hero shows (original vs a styled render).
   const [variantChoice, setVariantChoice] = useState<{ photoId: string; key: string } | null>(null);
 
   // --- render request state ----------------------------------------------------
@@ -160,7 +170,7 @@ export default function PhonePage() {
     return (
       <>
         {splashEl}
-        <Centered>Session not found — scan the booth&apos;s QR again.</Centered>
+        <Centered>Session not found. Scan the booth&apos;s QR again.</Centered>
       </>
     );
 
@@ -214,7 +224,7 @@ export default function PhonePage() {
       : undefined;
   const selectedPhoto = explicitPhoto ?? latestAvailablePhoto ?? photos[photos.length - 1];
 
-  // Per-photo render stats for the ✦ thumbnail badges.
+  // Per-photo render stats for the styled thumbnail badges.
   const renderStats = new Map<string, { done: number; busy: boolean }>();
   for (const render of session.renders) {
     const stats = renderStats.get(render.photoId) ?? { done: 0, busy: false };
@@ -236,8 +246,8 @@ export default function PhonePage() {
     (render) => render.status === 'done' && render.outputUrl !== null,
   );
 
-  // Hero variants: the original frame plus every finished AI version. Default
-  // to the newest AI version so styled photos are immediately visible.
+  // Hero variants: the original frame plus every finished styled version.
+  // Default to the newest one so styled photos are immediately visible.
   const variants: PhotoVariant[] = selectedPhoto?.url
     ? [
         { key: 'original', label: 'Original', url: selectedPhoto.url },
@@ -282,12 +292,12 @@ export default function PhonePage() {
           label:
             activeRenders.length === 1
               ? `Creating your ${styleNameOf(activeRenders[0].styleId)} photo…`
-              : `Creating ${activeRenders.length} AI photos…`,
+              : `Creating ${activeRenders.length} styled photos…`,
         }
       : !bannerDismissed && lastRequestedRender?.status === 'done'
-        ? { kind: 'ready', label: `Your ${styleNameOf(lastRequestedRender.styleId)} photo is ready — tap to view` }
+        ? { kind: 'ready', label: `Your ${styleNameOf(lastRequestedRender.styleId)} photo is ready. Tap to view` }
         : !bannerDismissed && lastRequestedRender?.status === 'failed'
-          ? { kind: 'failed', label: `The ${styleNameOf(lastRequestedRender.styleId)} edit didn't finish — tap to retry` }
+          ? { kind: 'failed', label: `The ${styleNameOf(lastRequestedRender.styleId)} edit didn't finish. Tap to retry` }
           : null;
 
   function selectPhoto(photoId: string) {
@@ -351,7 +361,7 @@ export default function PhonePage() {
       setLastRequestedRenderId(renderId);
     } catch (error) {
       console.error('Render request failed', error);
-      setRenderSubmissionError("We couldn't start the AI edit. Please try again.");
+      setRenderSubmissionError("We couldn't start the styled edit. Please try again.");
     } finally {
       renderSubmissionLock.current = false;
       setIsRenderSubmitting(false);
@@ -391,28 +401,25 @@ export default function PhonePage() {
       {splashEl}
       <GenerationBanner state={bannerState} onTap={onBannerTap} />
 
-      <div
-        aria-hidden
-        className="pointer-events-none fixed -top-1/4 left-1/2 h-[90vh] w-[90vh] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(217,70,239,0.14),rgba(11,11,20,0)_65%)]"
-      />
+      <AmberGlow sizeVh={90} />
 
-      <header className="relative flex items-center justify-between pt-[max(1.25rem,env(safe-area-inset-top))]">
-        <h1 className="text-lg font-black tracking-tight">AI Photobooth</h1>
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-xs text-white/70">
+      <header className="flex items-center justify-between pt-[max(1.25rem,env(safe-area-inset-top))]">
+        <h1 className="text-lg font-semibold tracking-tight">Amber Photobooths</h1>
+        <span className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 font-mono text-xs text-zinc-500">
           {session.shortCode}
         </span>
       </header>
 
       {isReconnecting && (
         <p
-          className="relative rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-center text-sm text-amber-200"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-800"
           role="status"
         >
           Reconnecting…
         </p>
       )}
 
-      <div className="relative flex flex-col gap-5">
+      <div className="flex flex-col gap-5">
         <CapturePanel
           phase={phase}
           shots={shots}
@@ -434,9 +441,9 @@ export default function PhonePage() {
         />
 
         {failedRenderForSelected && (
-          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3" role="alert">
-            <p className="text-sm text-red-300">
-              The ✦ {styleNameOf(failedRenderForSelected.styleId)} edit didn&apos;t finish.
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3" role="alert">
+            <p className="text-sm text-red-700">
+              The {styleNameOf(failedRenderForSelected.styleId)} edit didn&apos;t finish.
             </p>
             <button
               type="button"
@@ -445,7 +452,7 @@ export default function PhonePage() {
                 void submitRender(failedRenderForSelected.styleId);
               }}
               disabled={isGenerating || isReconnecting}
-              className="mt-2 rounded-xl bg-red-500/80 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="mt-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-40"
             >
               Try again
             </button>
@@ -477,7 +484,7 @@ export default function PhonePage() {
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-dvh items-center justify-center px-8 text-center text-white/50">{children}</div>;
+  return <div className="flex min-h-dvh items-center justify-center px-8 text-center text-zinc-500">{children}</div>;
 }
 
 // Downscale an image on the client before upload. Falls back to the original

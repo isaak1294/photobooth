@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "convex dev --start 'next dev'",
     "booth": "next dev --hostname 0.0.0.0",
+    "nobooth": "NEXT_PUBLIC_NOBOOTH=1 next dev",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && next build",
     "start": "next start",

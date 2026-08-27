@@ -28,13 +28,13 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
 
   return (
     <section
-      className="rounded-3xl border border-white/10 bg-white/[0.04] p-4"
+      className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
       aria-label="Booth camera"
     >
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-medium text-white/60">Booth camera</p>
+        <p className="text-sm font-medium text-zinc-500">Booth camera</p>
         <div
-          className="flex rounded-full border border-white/10 bg-white/5 p-1"
+          className="flex rounded-lg bg-zinc-100 p-1"
           role="radiogroup"
           aria-label="Photos per press"
         >
@@ -46,8 +46,8 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
               aria-checked={shots === n}
               onClick={() => onShotsChange(n)}
               disabled={busy}
-              className={`min-w-10 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 ${
-                shots === n ? 'bg-fuchsia-500 text-white' : 'text-white/55'
+              className={`min-w-10 rounded-md px-3 py-1 text-sm font-medium transition-colors disabled:opacity-40 ${
+                shots === n ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'
               }`}
             >
               {n}×
@@ -61,7 +61,7 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
           type="button"
           onClick={onCapture}
           disabled={disabled}
-          className="flex min-h-16 w-full items-center justify-center rounded-2xl bg-fuchsia-500 px-6 text-lg font-semibold text-white transition-colors hover:bg-fuchsia-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-fuchsia-400 disabled:opacity-40 motion-reduce:transition-none"
+          className="flex min-h-12 w-full items-center justify-center rounded-lg bg-zinc-900 px-6 text-base font-medium text-white transition-colors hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900 disabled:opacity-40 motion-reduce:transition-none"
         >
           {shots === 1 ? 'Take photo' : `Take ${shots} photos`}
         </button>
@@ -69,12 +69,12 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
 
       <div aria-live="polite" aria-atomic="true">
         {burst && (
-          <p className="mt-3 text-center text-sm text-white/50">
+          <p className="mt-3 text-center text-sm text-zinc-500">
             Photo {burst.index} of {burst.total}
           </p>
         )}
         {phase.kind === 'failed' && (
-          <p className="mt-3 text-center text-sm text-red-400" role="alert">
+          <p className="mt-3 text-center text-sm text-red-600" role="alert">
             {phase.error ?? "That photo didn't work."} Tap the button to try again.
           </p>
         )}
@@ -86,7 +86,7 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
 function StatusSlot({ phase }: { phase: CapturePhase }) {
   return (
     <div
-      className="flex min-h-16 w-full items-center justify-center rounded-2xl border border-fuchsia-500/40 bg-fuchsia-500/10 px-6"
+      className="flex min-h-12 w-full items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 px-6"
       role="status"
       aria-live="polite"
       aria-atomic="true"
@@ -94,23 +94,23 @@ function StatusSlot({ phase }: { phase: CapturePhase }) {
       {phase.kind === 'starting' && <Pulse>Connecting to booth…</Pulse>}
       {phase.kind === 'counting_down' && (
         <span className="flex items-baseline gap-3">
-          <span className="text-sm font-medium text-white/60">Look at the booth</span>
+          <span className="text-sm font-medium text-zinc-500">Look at the booth</span>
           {/* Key on the digit so each tick re-mounts and re-plays the pop-in. */}
           <span
             key={phase.secondsLeft ?? 'go'}
-            className="animate-[ping_0.15s_ease-out_1] text-4xl leading-none font-black text-fuchsia-300 motion-reduce:animate-none"
+            className="animate-[ping_0.15s_ease-out_1] text-3xl leading-none font-semibold text-zinc-900 motion-reduce:animate-none"
           >
             {phase.secondsLeft === null || phase.secondsLeft <= 0 ? '…' : phase.secondsLeft}
           </span>
         </span>
       )}
-      {phase.kind === 'capturing' && <span className="text-2xl font-black tracking-tight">Smile!</span>}
+      {phase.kind === 'capturing' && <span className="text-xl font-semibold tracking-tight">Smile!</span>}
       {phase.kind === 'uploading' && <Pulse>Sending your photo…</Pulse>}
-      {phase.kind === 'saved' && <span className="text-lg font-bold text-fuchsia-300">Saved ✓</span>}
+      {phase.kind === 'saved' && <span className="text-base font-semibold text-emerald-600">Saved ✓</span>}
     </div>
   );
 }
 
 function Pulse({ children }: { children: React.ReactNode }) {
-  return <span className="animate-pulse font-medium text-white/70 motion-reduce:animate-none">{children}</span>;
+  return <span className="animate-pulse font-medium text-zinc-500 motion-reduce:animate-none">{children}</span>;
 }

@@ -1,28 +1,23 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { DM_Sans } from 'next/font/google';
 import './globals.css';
 import { ConvexClientProvider } from '@/components/ConvexClientProvider';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const dmSans = DM_Sans({
+  variable: '--font-dm-sans',
   subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: 'AI Photobooth',
-  description: 'Control the booth camera and create an AI-styled photo from your phone.',
+  title: 'Amber Photobooths',
+  description: 'Control the booth camera and create styled photos from your phone.',
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#0b0b14',
+  themeColor: '#fafafa',
 };
 
 export default function RootLayout({
@@ -32,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${dmSans.variable} antialiased`}>
         <ConvexClientProvider>{children}</ConvexClientProvider>
       </body>
     </html>
