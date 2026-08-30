@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DynaPuff, Caveat, Nunito } from "next/font/google";
+import { BookingForm, type BookingTheme } from "@/components/product/BookingForm";
 
 const dynapuff = DynaPuff({
   subsets: ["latin"],
@@ -41,6 +42,17 @@ function Squiggle({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
+const bookingTheme: BookingTheme = {
+  label: "text-xl leading-none text-[#4a3f35]/80 [font-family:var(--font-caveat)]",
+  input:
+    "w-full rounded-xl border-2 border-dashed border-[#c9b99a] bg-[#fdf8f0] px-4 py-2.5 font-semibold text-[#4a3f35] focus:border-[#e2648c] focus:outline-none",
+  button:
+    "w-full cursor-pointer rounded-full bg-[#e2648c] px-10 py-4 text-lg font-extrabold text-white shadow-[0_4px_0_#b34367] transition-all hover:translate-y-1 hover:shadow-[0_1px_0_#b34367]",
+  successWrap: "py-6 text-center",
+  successTitle: "text-4xl text-[#e2648c] [font-family:var(--font-dynapuff)]",
+  successBody: "mt-3 text-2xl text-[#4a3f35]/70 [font-family:var(--font-caveat)]",
+};
 
 const notes = [
   {
@@ -114,12 +126,12 @@ export default function Shoebox() {
             className="hidden gap-7 text-xl sm:flex"
             style={{ fontFamily: "var(--font-caveat)" }}
           >
-            <a href="#" className="hover:text-[#e2648c]">how it works</a>
-            <a href="#" className="hover:text-[#e2648c]">the album</a>
-            <a href="#" className="hover:text-[#e2648c]">prices &amp; stuff</a>
+            <a href="#deal" className="hover:text-[#e2648c]">how it works</a>
+            <a href="#album" className="hover:text-[#e2648c]">the album</a>
+            <a href="#book" className="hover:text-[#e2648c]">prices &amp; stuff</a>
           </nav>
           <a
-            href="#"
+            href="#book"
             className="rounded-full bg-[#e2648c] px-5 py-2 text-sm font-extrabold text-white shadow-[0_3px_0_#b34367] transition-all hover:translate-y-0.5 hover:shadow-[0_1px_0_#b34367]"
           >
             save your date ♡
@@ -163,7 +175,7 @@ export default function Shoebox() {
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <a
-            href="#"
+            href="#book"
             className="rounded-full bg-[#4a3f35] px-8 py-4 text-lg font-extrabold text-[#fdf8f0] shadow-[0_4px_0_#2c251e] transition-all hover:translate-y-1 hover:shadow-[0_1px_0_#2c251e]"
           >
             book the booth
@@ -177,7 +189,7 @@ export default function Shoebox() {
         </div>
 
         {/* polaroid pile */}
-        <div className="mt-20 flex flex-wrap items-start justify-center gap-8">
+        <div id="album" className="mt-20 flex flex-wrap items-start justify-center gap-8">
           {polaroids.map((p) => (
             <figure
               key={p.caption}
@@ -200,7 +212,7 @@ export default function Shoebox() {
       </section>
 
       {/* Sticky note features */}
-      <section className="bg-[#f4ead8]/80 py-24">
+      <section id="deal" className="bg-[#f4ead8]/80 py-24">
         <div className="mx-auto max-w-5xl px-6">
           <div className="text-center">
             <h2
@@ -303,7 +315,7 @@ export default function Shoebox() {
       </section>
 
       {/* Pricing / RSVP card */}
-      <section className="pb-28">
+      <section id="book" className="pb-28">
         <div className="relative mx-auto max-w-xl px-6">
           <div className="relative rotate-1 rounded-2xl bg-white p-10 text-center shadow-[0_14px_30px_rgba(74,63,53,0.18)]">
             <Tape className="-top-3 left-10 -rotate-6" />
@@ -332,12 +344,14 @@ export default function Shoebox() {
               <li>☑ shared album next morning</li>
               <li>☑ a lil box of doubles, mailed</li>
             </ul>
-            <a
-              href="#"
-              className="mt-8 inline-block rounded-full bg-[#e2648c] px-10 py-4 text-lg font-extrabold text-white shadow-[0_4px_0_#b34367] transition-all hover:translate-y-1 hover:shadow-[0_1px_0_#b34367]"
-            >
-              rsvp yes ♡
-            </a>
+            <div className="mt-8 border-t-2 border-dashed border-[#c9b99a] pt-8">
+              <BookingForm
+                theme={bookingTheme}
+                submitLabel="rsvp yes ♡"
+                successTitle="eee, yay!!"
+                successBody="got it! we'll write back super soon — check your inbox ♡"
+              />
+            </div>
           </div>
           <Squiggle className="absolute -right-2 -top-10 w-28 rotate-12 text-[#5bb8e0]" />
         </div>

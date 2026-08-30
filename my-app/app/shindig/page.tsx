@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Shrikhand, Karla } from "next/font/google";
+import { BookingForm, type BookingTheme } from "@/components/product/BookingForm";
 
 const shrikhand = Shrikhand({
   weight: "400",
@@ -10,6 +11,18 @@ const karla = Karla({ subsets: ["latin"], variable: "--font-karla" });
 
 export const metadata: Metadata = {
   title: "Shindig — Get in the booth, sugar",
+};
+
+const bookingTheme: BookingTheme = {
+  label: "text-xs font-bold uppercase tracking-[0.15em] text-[#3b2417]/70",
+  input:
+    "w-full rounded-xl border-2 border-[#3b2417]/25 bg-white px-4 py-3 font-semibold text-[#3b2417] focus:border-[#d95f18] focus:outline-none",
+  button:
+    "w-full cursor-pointer rounded-full bg-[#d95f18] px-10 py-4 text-xl font-bold text-[#f6ecd9] shadow-[0_6px_0_#3b2417] transition-all hover:translate-y-1 hover:shadow-[0_2px_0_#3b2417]",
+  successWrap:
+    "rounded-2xl border-2 border-dashed border-[#3b2417]/40 bg-white p-10 text-center",
+  successTitle: "text-4xl text-[#d95f18] [font-family:var(--font-shrikhand)]",
+  successBody: "mt-4 font-semibold text-[#3b2417]/80",
 };
 
 const stubs = [
@@ -53,12 +66,12 @@ export default function Shindig() {
             Shindig
           </span>
           <nav className="hidden gap-8 text-sm font-bold uppercase tracking-wider sm:flex">
-            <a href="#" className="hover:text-[#e8a33d]">The Booth</a>
-            <a href="#" className="hover:text-[#e8a33d]">Good Times</a>
-            <a href="#" className="hover:text-[#e8a33d]">Rates</a>
+            <a href="#booth" className="hover:text-[#e8a33d]">The Booth</a>
+            <a href="#lineup" className="hover:text-[#e8a33d]">Good Times</a>
+            <a href="#book" className="hover:text-[#e8a33d]">Rates</a>
           </nav>
           <a
-            href="#"
+            href="#book"
             className="rounded-full bg-[#d95f18] px-5 py-2 text-sm font-bold uppercase tracking-wider text-[#f6ecd9] hover:bg-[#e8a33d] hover:text-[#3b2417] transition-colors"
           >
             Book the vibe
@@ -95,13 +108,13 @@ export default function Shindig() {
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-4">
             <a
-              href="#"
+              href="#book"
               className="rounded-full bg-[#3b2417] px-8 py-4 text-lg font-bold text-[#f6ecd9] shadow-[0_6px_0_#d95f18] transition-all hover:translate-y-1 hover:shadow-[0_2px_0_#d95f18]"
             >
               Save my date
             </a>
             <a
-              href="#"
+              href="#booth"
               className="rounded-full border-[3px] border-[#3b2417] px-8 py-4 text-lg font-bold transition-colors hover:bg-[#3b2417] hover:text-[#f6ecd9]"
             >
               Peek the strips
@@ -151,7 +164,7 @@ export default function Shindig() {
       </section>
 
       {/* Photo strip showcase */}
-      <section className="bg-[#d95f18] pb-24 pt-8 text-[#f6ecd9]">
+      <section id="booth" className="bg-[#d95f18] pb-24 pt-8 text-[#f6ecd9]">
         <div className="mx-auto max-w-6xl px-6">
           <div className="flex flex-col items-center gap-12 lg:flex-row lg:justify-between">
             <div className="max-w-md">
@@ -200,7 +213,7 @@ export default function Shindig() {
       </section>
 
       {/* Ticket stub features */}
-      <section className="mx-auto max-w-6xl px-6 py-24">
+      <section id="lineup" className="mx-auto max-w-6xl px-6 py-24">
         <div className="text-center">
           <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#d95f18]">
             Admit everyone
@@ -257,8 +270,8 @@ export default function Shindig() {
         </div>
       </section>
 
-      {/* Rates */}
-      <section className="mx-auto max-w-4xl px-6 py-24 text-center">
+      {/* Rates + booking */}
+      <section id="book" className="mx-auto max-w-4xl px-6 py-24 text-center">
         <h2
           className="text-5xl"
           style={{ fontFamily: "var(--font-shrikhand)" }}
@@ -276,14 +289,17 @@ export default function Shindig() {
         </p>
         <p className="mx-auto mt-4 max-w-md font-medium text-[#3b2417]/80">
           Booth, attendant, unlimited strips, the prop trunk, and a digital
-          shoebox of every frame the morning after.
+          shoebox of every frame the morning after. Tell us about your party
+          and we&rsquo;ll hold the night.
         </p>
-        <a
-          href="#"
-          className="mt-10 inline-block rounded-full bg-[#d95f18] px-12 py-5 text-xl font-bold text-[#f6ecd9] shadow-[0_6px_0_#3b2417] transition-all hover:translate-y-1 hover:shadow-[0_2px_0_#3b2417]"
-        >
-          Let&rsquo;s boogie →
-        </a>
+        <div className="mx-auto mt-12 max-w-2xl">
+          <BookingForm
+            theme={bookingTheme}
+            submitLabel="Let's boogie →"
+            successTitle="Far out!"
+            successBody="Your night's on our calendar in pencil. We'll call to make it pen."
+          />
+        </div>
       </section>
 
       {/* Footer */}

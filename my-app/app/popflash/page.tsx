@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo_Black, Space_Grotesk } from "next/font/google";
+import { BookingForm, type BookingTheme } from "@/components/product/BookingForm";
 
 const archivo = Archivo_Black({
   weight: "400",
@@ -13,6 +14,18 @@ const grotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "POPFLASH — Your party. But louder.",
+};
+
+const bookingTheme: BookingTheme = {
+  label: "text-xs font-black uppercase",
+  input:
+    "w-full border-2 border-black bg-white px-3 py-2.5 font-bold shadow-[3px_3px_0_0_#000] focus:bg-[#fffbd6] focus:outline-none",
+  button:
+    "w-full cursor-pointer border-4 border-black bg-black px-8 py-4 text-xl font-black text-[#ffde03] shadow-[6px_6px_0_0_#ff2d95] transition-all hover:translate-x-[6px] hover:translate-y-[6px] hover:shadow-none [font-family:var(--font-archivo)]",
+  successWrap:
+    "-rotate-1 border-4 border-black bg-[#a8ff60] p-8 text-center shadow-[8px_8px_0_0_#000]",
+  successTitle: "text-4xl uppercase [font-family:var(--font-archivo)]",
+  successBody: "mt-3 font-bold",
 };
 
 const marqueeWords = [
@@ -81,10 +94,14 @@ export default function Popflash() {
             POP<span className="text-[#ff2d95]">FLASH</span>
           </span>
           <nav className="hidden md:flex gap-2 font-bold">
-            {["THE BOOTH", "PRICING", "PICS OR IT DIDN'T HAPPEN"].map((l) => (
+            {[
+              ["THE BOOTH", "#box"],
+              ["PRICING", "#pricing"],
+              ["PICS OR IT DIDN'T HAPPEN", "#pics"],
+            ].map(([l, href]) => (
               <a
                 key={l}
-                href="#"
+                href={href}
                 className="px-3 py-1 border-2 border-black bg-white hover:bg-[#7df9ff] shadow-[3px_3px_0_0_#000] hover:shadow-[1px_1px_0_0_#000] hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-sm"
               >
                 {l}
@@ -92,7 +109,7 @@ export default function Popflash() {
             ))}
           </nav>
           <a
-            href="#"
+            href="#book"
             className="px-4 py-2 border-2 border-black bg-[#ff2d95] text-white font-bold shadow-[4px_4px_0_0_#000] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all text-sm"
           >
             BOOK IT →
@@ -129,14 +146,14 @@ export default function Popflash() {
 
         <div className="mt-10 flex flex-wrap gap-4">
           <a
-            href="#"
+            href="#book"
             className="px-8 py-4 border-4 border-black bg-black text-[#ffde03] text-xl font-black shadow-[6px_6px_0_0_#ff2d95] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] transition-all"
             style={{ fontFamily: "var(--font-archivo)" }}
           >
             GET A BOOTH
           </a>
           <a
-            href="#"
+            href="#pics"
             className="px-8 py-4 border-4 border-black bg-white text-xl font-black shadow-[6px_6px_0_0_#000] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] transition-all"
             style={{ fontFamily: "var(--font-archivo)" }}
           >
@@ -145,7 +162,7 @@ export default function Popflash() {
         </div>
 
         {/* polaroid pile */}
-        <div className="mt-16 flex flex-wrap gap-6">
+        <div id="pics" className="mt-16 flex flex-wrap gap-6 scroll-mt-24">
           {[
             { r: "-rotate-3", bg: "bg-[#ff2d95]", cap: "bridesmaids.gif" },
             { r: "rotate-2", bg: "bg-[#7df9ff]", cap: "office party 😭" },
@@ -186,7 +203,7 @@ export default function Popflash() {
       </div>
 
       {/* Features */}
-      <section className="mx-auto max-w-6xl px-4 py-20">
+      <section id="box" className="mx-auto max-w-6xl px-4 py-20 scroll-mt-16">
         <h2
           className="text-5xl sm:text-6xl uppercase mb-12 rotate-[-1deg]"
           style={{ fontFamily: "var(--font-archivo)" }}
@@ -220,7 +237,7 @@ export default function Popflash() {
       </section>
 
       {/* Pricing */}
-      <section className="bg-[#ff2d95] border-y-4 border-black py-20">
+      <section id="pricing" className="bg-[#ff2d95] border-y-4 border-black py-20 scroll-mt-16">
         <div className="mx-auto max-w-6xl px-4">
           <h2
             className="text-5xl sm:text-6xl uppercase text-white [text-shadow:4px_4px_0_#000] mb-12"
@@ -260,13 +277,42 @@ export default function Popflash() {
                   ))}
                 </ul>
                 <a
-                  href="#"
+                  href="#book"
                   className="mt-8 block text-center border-2 border-black bg-white py-3 font-black shadow-[4px_4px_0_0_#000] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
                 >
                   LET&rsquo;S GO
                 </a>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Booking */}
+      <section id="book" className="bg-[#7df9ff] border-b-4 border-black py-20 scroll-mt-16">
+        <div className="mx-auto max-w-3xl px-4">
+          <h2
+            className="text-5xl sm:text-6xl uppercase rotate-[-1deg] mb-4"
+            style={{ fontFamily: "var(--font-archivo)" }}
+          >
+            Lock it in
+          </h2>
+          <p className="mb-10 max-w-md border-l-4 border-black pl-4 font-bold">
+            Fill this out and we&rsquo;ll text you back before you finish your
+            playlist. No deposit till you&rsquo;re sure.
+          </p>
+          <div className="border-4 border-black bg-white p-6 shadow-[8px_8px_0_0_#000] sm:p-8">
+            <BookingForm
+              theme={bookingTheme}
+              packages={[
+                "HOUSE PARTY — $249",
+                "FULL SEND — $499",
+                "ABSOLUTE CHAOS — $999",
+              ]}
+              submitLabel="SEND IT →"
+              successTitle="YOU'RE IN!!"
+              successBody="Booth request received. Keep your phone loud — we reply stupid fast."
+            />
           </div>
         </div>
       </section>

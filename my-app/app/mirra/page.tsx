@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
+import { BookingForm, type BookingTheme } from "@/components/product/BookingForm";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -30,6 +31,17 @@ const features = [
   },
 ];
 
+const bookingTheme: BookingTheme = {
+  label: "text-[11px] uppercase tracking-[0.25em] text-[#1c1a17]/60",
+  input:
+    "w-full border-b border-[#1c1a17]/30 bg-transparent py-2 text-[15px] text-[#1c1a17] focus:border-[#1c1a17] focus:outline-none",
+  button:
+    "inline-block cursor-pointer border border-[#1c1a17] px-12 py-4 text-[12px] uppercase tracking-[0.3em] transition-colors hover:bg-[#1c1a17] hover:text-[#f4f1ea]",
+  successWrap: "border border-[#1c1a17]/30 p-10",
+  successTitle: "text-3xl [font-family:var(--font-fraunces)]",
+  successBody: "mt-4 text-[15px] leading-relaxed text-[#1c1a17]/70",
+};
+
 const galleryTones = [
   "from-stone-300 via-stone-400 to-stone-600",
   "from-neutral-400 via-neutral-500 to-neutral-800",
@@ -54,12 +66,12 @@ export default function Mirra() {
             Mirra
           </span>
           <nav className="hidden sm:flex gap-8 text-[11px] uppercase tracking-[0.25em] text-[#1c1a17]/70">
-            <a href="#" className="hover:text-[#1c1a17]">The Studio</a>
-            <a href="#" className="hover:text-[#1c1a17]">Occasions</a>
-            <a href="#" className="hover:text-[#1c1a17]">Journal</a>
+            <a href="#studio" className="hover:text-[#1c1a17]">The Studio</a>
+            <a href="#occasions" className="hover:text-[#1c1a17]">Occasions</a>
+            <a href="#book" className="hover:text-[#1c1a17]">Rates</a>
           </nav>
           <a
-            href="#"
+            href="#book"
             className="text-[11px] uppercase tracking-[0.25em] border-b border-[#1c1a17] pb-0.5 hover:opacity-60"
           >
             Enquire
@@ -108,7 +120,7 @@ export default function Mirra() {
       </div>
 
       {/* Numbered features */}
-      <section className="mx-auto max-w-6xl px-6 py-20">
+      <section id="studio" className="mx-auto max-w-6xl px-6 py-20">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-[#1c1a17]/20 border border-[#1c1a17]/20">
           {features.map((f) => (
             <article key={f.n} className="bg-[#f4f1ea] p-8 min-h-[18rem] flex flex-col">
@@ -130,7 +142,7 @@ export default function Mirra() {
       </section>
 
       {/* Gallery strip */}
-      <section className="pb-20">
+      <section id="occasions" className="pb-20">
         <div className="mx-auto max-w-6xl px-6 mb-6 flex items-baseline justify-between">
           <h3
             className="text-2xl"
@@ -157,8 +169,8 @@ export default function Mirra() {
       </section>
 
       {/* Booking */}
-      <section className="border-t border-[#1c1a17]/20">
-        <div className="mx-auto max-w-6xl px-6 py-24 grid grid-cols-1 sm:grid-cols-2 gap-12 items-center">
+      <section id="book" className="border-t border-[#1c1a17]/20">
+        <div className="mx-auto max-w-6xl px-6 py-24 grid grid-cols-1 sm:grid-cols-2 gap-16 items-start">
           <div>
             <h3
               className="text-5xl leading-[1.05]"
@@ -170,17 +182,16 @@ export default function Mirra() {
             </h3>
             <p className="mt-6 text-[15px] leading-relaxed text-[#1c1a17]/70 max-w-md">
               Engagements from $1,800, inclusive of delivery, an attendant in
-              black, and archival prints for every guest.
+              black, and archival prints for every guest. Tell us about your
+              evening and we&rsquo;ll reply within a day.
             </p>
           </div>
-          <div className="flex sm:justify-end">
-            <a
-              href="#"
-              className="inline-block border border-[#1c1a17] px-12 py-5 text-[12px] uppercase tracking-[0.3em] hover:bg-[#1c1a17] hover:text-[#f4f1ea] transition-colors"
-            >
-              Request a date
-            </a>
-          </div>
+          <BookingForm
+            theme={bookingTheme}
+            submitLabel="Request a date"
+            successTitle="We'll be in touch."
+            successBody="Your enquiry has our attention. Expect a note from the studio within the day."
+          />
         </div>
       </section>
 

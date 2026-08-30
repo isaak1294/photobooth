@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* The product-page candidates navigate by in-page anchors. */
+html {
+  scroll-behavior: smooth;
+}
+
 /* One light palette across every surface — the booth kiosk and the phone share
    the same off-white base and near-black ink so the QR handoff feels like one
    product, not two apps. */
