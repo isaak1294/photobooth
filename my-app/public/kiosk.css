@@ -374,6 +374,8 @@ body {
   background: #fff;
   font-size: 2.2vmin;
   text-transform: uppercase;
+  max-width: 70vmin;
+  text-align: center;
   box-shadow: 4px 4px 0 0 #000;
   transform: rotate(-1deg);
 }

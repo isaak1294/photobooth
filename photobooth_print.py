@@ -362,6 +362,15 @@ class PrintWorker(threading.Thread):
     Single background thread owning the printer. The UI thread only ever
     calls enqueue(); everything slow, retryable, or failure-prone happens
     here, and status flows back through on_status for the kiosk/Convex.
+
+    NAMING: this subclasses threading.Thread, which keeps private state on the
+    instance and does not guard against subclasses. Python 3.13 stores the
+    native thread handle as `self._handle`, and older versions have a
+    `_stop()` method that join() calls — so a method named `_handle` or an
+    attribute named `_stop` here is silently shadowed the moment start() runs
+    ("'_thread._ThreadHandle' object is not callable", on every job). Keep
+    every name in this class off Thread's namespace: nothing named _handle,
+    _stop, _started, _target, _args, _kwargs, _name, _ident, _daemonic.
     """
 
     MAX_ATTEMPTS = 3
@@ -385,7 +394,7 @@ class PrintWorker(threading.Thread):
         self.on_status = on_status or (lambda task, state, detail: None)
         self.q: queue.Queue[PrintTask | None] = queue.Queue(maxsize=max_pending)
         self._sheet_px: tuple[int, int] | None = None
-        self._stop = threading.Event()
+        self._stopping = threading.Event()
 
     @property
     def sheet_px(self) -> tuple[int, int]:
@@ -405,18 +414,18 @@ class PrintWorker(threading.Thread):
             return False
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stopping.set()
         self.q.put(None)
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stopping.is_set():
             task = self.q.get()
             if task is None:
                 break
             try:
-                self._handle(task)
+                self._process(task)
             except Exception as exc:
-                # Anything _handle didn't expect — a corrupt JPEG, a short frame
+                # Anything _process didn't expect — a corrupt JPEG, a short frame
                 # set, a full disk. This MUST still emit a terminal status: the
                 # caller uses it to retire the job, and a job that never reaches
                 # a terminal state is retried on every restart forever.
@@ -425,7 +434,7 @@ class PrintWorker(threading.Thread):
             finally:
                 self.q.task_done()
 
-    def _handle(self, task: PrintTask) -> None:
+    def _process(self, task: PrintTask) -> None:
         self.on_status(task, "composing", "")
         photos = [Image.open(p) for p in task.photo_paths]
         sheet = build_sheet(photos, self.sheet_px, task.strip_layout, task.sheet_layout)
@@ -435,9 +444,9 @@ class PrintWorker(threading.Thread):
 
         # Outer loop: a consumable fault parks the task until a human reloads,
         # then the attempt budget starts over. This used to be recursion —
-        # _park() called _handle() — which added a stack frame per ribbon change
+        # _park() called _process() — which added a stack frame per ribbon change
         # and would grow without bound over a long event.
-        while not self._stop.is_set():
+        while not self._stopping.is_set():
             outcome = self._print_with_retries(task, pdf)
             if outcome != "parked":
                 return
@@ -448,7 +457,7 @@ class PrintWorker(threading.Thread):
     def _print_with_retries(self, task: PrintTask, pdf: Path) -> str:
         """One budget of attempts. Returns 'printed', 'failed', or 'parked'
         (consumables are out and only a human can clear it)."""
-        while task.attempts < self.MAX_ATTEMPTS and not self._stop.is_set():
+        while task.attempts < self.MAX_ATTEMPTS and not self._stopping.is_set():
             task.attempts += 1
             ok, detail = self.service.preflight()
             if not ok:
@@ -474,7 +483,7 @@ class PrintWorker(threading.Thread):
                 self.service.resume()
                 time.sleep(2 * task.attempts)  # linear backoff
 
-        if self._stop.is_set():
+        if self._stopping.is_set():
             return "failed"
         self.on_status(task, "failed", "gave up after retries")
         return "failed"
@@ -484,7 +493,7 @@ class PrintWorker(threading.Thread):
         worker is shutting down instead. The whole queue stalls here on purpose —
         there is one printer, so nothing behind this task could print anyway."""
         self.on_status(task, "waiting-operator", "; ".join(self.service.printer_reasons()))
-        while not self._stop.is_set():
+        while not self._stopping.is_set():
             time.sleep(5)
             if not self.service.needs_operator():
                 self.service.resume()

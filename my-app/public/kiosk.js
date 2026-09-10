@@ -452,8 +452,11 @@
   };
   function renderPrintState(print) {
     var entry = PRINT_LABELS[print.status] || ['is-busy', '🖨 ' + print.status];
+    // On a fault, show the agent's own reason (a CUPS state, a traceback's last
+    // line) so the operator at the table doesn't need the Pi's journal.
+    var reason = print.status === 'failed' || print.status === 'blocked' ? print.error || print.detail : null;
     el.printState.className = 'print-state ' + entry[0];
-    el.printState.textContent = entry[1];
+    el.printState.textContent = entry[1] + (reason ? ' — ' + reason : '');
     el.printState.hidden = false;
   }
 
