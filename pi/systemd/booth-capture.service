@@ -1,0 +1,29 @@
+# Node capture listener: owns the camera and the Convex subscription.
+#
+# Deliberately SEPARATE from booth-print.service. One printer fault must not be
+# able to stop the camera, and a camera fault must not strand the print queue.
+# The two communicate only through files under /var/lib/booth.
+
+[Unit]
+Description=Photobooth capture listener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ming
+WorkingDirectory=/home/ming/ai-photobooth/booth
+# Secrets live here, mode 0600, NOT in this unit file (which is world-readable).
+EnvironmentFile=/etc/booth.env
+ExecStart=/usr/bin/node pi-listener.mjs
+Restart=always
+RestartSec=3
+
+# Creates /var/lib/booth owned by User on first start. Frames, the print spool
+# and composed sheets all live under it, and it must survive reboots — /tmp on
+# Raspberry Pi OS is tmpfs, which is what the old capture path wrote to.
+StateDirectory=booth
+StateDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target

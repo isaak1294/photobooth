@@ -1,0 +1,9 @@
+[Unit]
+Description=Photobooth retention sweep
+
+[Service]
+Type=oneshot
+User=ming
+WorkingDirectory=/home/ming/ai-photobooth/booth
+ExecStart=/usr/bin/python3 booth_retention.py --days 7
+StateDirectory=booth

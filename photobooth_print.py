@@ -415,8 +415,13 @@ class PrintWorker(threading.Thread):
                 break
             try:
                 self._handle(task)
-            except Exception:
-                log.exception("unhandled error on session %s", task.session_id)
+            except Exception as exc:
+                # Anything _handle didn't expect — a corrupt JPEG, a short frame
+                # set, a full disk. This MUST still emit a terminal status: the
+                # caller uses it to retire the job, and a job that never reaches
+                # a terminal state is retried on every restart forever.
+                log.exception("unhandled error on burst %s", task.job_key)
+                self.on_status(task, "failed", f"{type(exc).__name__}: {exc}"[:300])
             finally:
                 self.q.task_done()
 

@@ -1,0 +1,32 @@
+# Python print agent: owns the SELPHY and the CUPS queue.
+#
+# Watches /var/lib/booth/spool/pending for job files dropped by the capture
+# listener. Needs no network to do its job — composition is local and CUPS is on
+# localhost — so it keeps printing through a venue Wi-Fi outage. It only uses the
+# network to report status back to Convex, best-effort, on a separate thread.
+
+[Unit]
+Description=Photobooth print agent
+After=cups.service
+Wants=cups.service
+
+[Service]
+Type=simple
+User=ming
+WorkingDirectory=/home/ming/ai-photobooth/booth
+EnvironmentFile=/etc/booth.env
+ExecStart=/usr/bin/python3 booth_print_agent.py
+Restart=always
+RestartSec=3
+
+# SIGTERM lets the agent drain: it stops claiming new jobs and finishes the sheet
+# already on the printer rather than abandoning it half-printed. A SELPHY pass
+# is ~41s, so allow comfortably more than that before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=90
+
+StateDirectory=booth
+StateDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
