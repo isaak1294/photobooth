@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 import { mutation, query, internalAction, internalMutation, internalQuery } from './_generated/server';
 import { internal } from './_generated/api';
 import { blobToDataUri } from './renders';
+import { IDENTITY_SUFFIX } from './identity';
 
 // Custom themes: a guest uploads an inspiration photo (a wedding invitation, a
 // poster, a vibe) and we derive a photobooth theme from it. The derivation uses
@@ -191,12 +192,6 @@ export const runThemeDerivation = internalAction({
 // ---------------------------------------------------------------------------
 const GMI_CHAT_URL = 'https://api.gmi-serving.com/v1/chat/completions';
 
-// Appended server-side to every derived prompt. The vision model describes the
-// LOOK; this line keeps the render from repainting who is in the photo. Same
-// language as the seeded presets, which survived a 4-person identity test.
-const IDENTITY_SUFFIX =
-  ' Apply the theme to everyone in the frame. Keep every person’s exact face, features, and hair so all are clearly recognizable, and preserve the original composition, framing, and number of people.';
-
 const DERIVE_INSTRUCTION = [
   'You design photo-editing themes for an AI photobooth. Study the attached inspiration image',
   '(it might be an invitation, poster, artwork, or just a vibe) and design a theme from it.',
@@ -205,7 +200,8 @@ const DERIVE_INSTRUCTION = [
   '"prompt": one paragraph instructing an image-editing model how to restyle a photobooth photo',
   'into this theme — color palette, lighting, mood, background, wardrobe accents, and any motifs',
   'drawn from the inspiration image. Describe only the look and atmosphere; never instruct it to',
-  'replace, add, or remove people.',
+  'replace or remove the people in the photo, or to add individual people. A large anonymous',
+  'background crowd (a stadium, a packed street) is fine as distant, indistinct atmosphere.',
 ].join(' ');
 
 async function deriveThemeFromImage(imageDataUri: string): Promise<{ name: string; prompt: string }> {
