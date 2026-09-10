@@ -103,6 +103,13 @@ sudo chmod 600 /etc/booth.env
 `COUNTDOWN_MS=0` because the *frontend* owns the countdown. Leave it unset and
 the Pi waits another 3s after the on-screen count finishes.
 
+The listener **expires** any pending request older than 45s (`STALE_REQUEST_MS`)
+instead of shooting it. Requests pile up whenever the Pi is down — a reboot, a
+setup session, a wrong `BOOTH_SECRET` — and without this the camera would fire
+through that whole backlog at nobody while a real press waited behind it, until
+the kiosk gave up and reported the photo didn't take. `journalctl` shows each
+one as `⏭  expiring request …`.
+
 `BOOTH_SECRET` must match the deployment (`npx convex env set BOOTH_SECRET ...`).
 If it doesn't, `pendingCaptures` throws `Invalid booth secret` and the listener
 sits there looking healthy while every capture times out on the phone.

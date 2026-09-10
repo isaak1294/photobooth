@@ -61,6 +61,15 @@ const PENDING_DIR = path.join(SPOOL_ROOT, 'spool', 'pending');
 const client = new ConvexClient(CONVEX_URL);
 const inFlight = new Set();
 
+// pendingCaptures returns EVERY request still marked pending — including ones
+// written while this listener was down (a reboot, a setup session, a bad
+// BOOTH_SECRET). Those guests are long gone. Shooting the backlog anyway is
+// worse than useless: each stale row costs a shutter cycle plus an upload, the
+// camera fires at nobody, and a real press queues behind all of it until the
+// kiosk's watchdog gives up and says the photo didn't take. So anything older
+// than this is failed with a reason instead of shot.
+const STALE_REQUEST_MS = Number(process.env.STALE_REQUEST_MS ?? 45_000);
+
 const setStatus = (requestId, status, error) =>
   client.mutation(anyApi.captures.updateCaptureStatus, { secret: SECRET, requestId, status, error });
 
@@ -88,6 +97,13 @@ client.onUpdate(anyApi.captures.pendingCaptures, { secret: SECRET }, async (rows
     if (inFlight.has(requestId)) continue;
     inFlight.add(requestId);
     try {
+      const age = Date.now() - row.createdAt;
+      if (age > STALE_REQUEST_MS) {
+        console.warn(`⏭  expiring request ${requestId}: ${Math.round(age / 1000)}s old, nobody is waiting`);
+        await setStatus(requestId, 'failed', 'Expired before the booth saw it');
+        continue;
+      }
+
       // Advancing past `pending` also claims it (drops it from pendingCaptures),
       // so a re-fired subscription won't double-shoot.
       await setStatus(requestId, 'counting_down');

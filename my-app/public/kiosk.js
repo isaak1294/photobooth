@@ -4,10 +4,19 @@
    /kiosk/api/* handlers, which proxy to Convex, and polls instead of
    subscribing.
 
-   Countdown timing: the on-screen 3-2-1 starts the moment the guest presses and
-   the capture request goes out on the same tick, so it runs concurrently with
-   the Pi's own default COUNTDOWN_MS=3000 and the shutter fires as the count
-   ends. The digit ticks on a local clock; the network can't stutter it. */
+   Countdown timing: the Pi runs with COUNTDOWN_MS=0 (pi/README.md) — the kiosk
+   owns the count — and shoots ~1.5-2s after it sees a request (subscription
+   push + rpicam's 1s warm-up). So the request goes out SHUTTER_LEAD_MS before
+   the on-screen count hits zero, and the shutter lands as "SMILE" appears. If
+   the Pi were left at its old 3000ms default the shot would simply land ~3s
+   later, and "SMILE" holds until it does. The digit ticks on a local clock; the
+   network can't stutter it.
+
+   Printing: every capture carries {burstId, seq, framesTotal}. When the Pi
+   writes the last frame of a 4-frame burst it drops a print job on its local
+   spool (scripts/pi-listener.mjs → pi/booth_print_agent.py), before it even
+   uploads — so the strips print automatically, with no request from here. The
+   handoff screen then polls the agent's status report to say when they're out. */
 (function () {
   'use strict';
 
@@ -15,10 +24,12 @@
   var SHOTS = cfg.shots || 4;
   var DEMO = !!cfg.demo;
 
-  var COUNTDOWN_MS = 3000; // must match the Pi's COUNTDOWN_MS
+  var COUNTDOWN_MS = 3000;
+  var SHUTTER_LEAD_MS = 1800; // request → Pi shutter, with COUNTDOWN_MS=0 on the Pi
   var HOLD_MS = 1300; // the landed photo, shown big
   var FLY_MS = 450; // ...then shrinking into its strip slot
   var POLL_MS = 500;
+  var PRINT_POLL_MS = 2000;
   var STAGE_TIMEOUT_MS = 20000; // per Pi stage; a silent listener fails visibly
 
   function $(id) {
@@ -51,6 +62,7 @@
     donePhotos: $('done-photos'),
     qr: $('qr'),
     doneCode: $('done-code'),
+    printState: $('print-state'),
     next: $('next'),
     failMsg: $('fail-msg'),
     retry: $('retry'),
@@ -74,11 +86,16 @@
     createSession: function () {
       return api('/kiosk/api/session', { method: 'POST' });
     },
-    requestCapture: function (token) {
+    requestCapture: function (token, burst) {
       return api('/kiosk/api/capture', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token }),
+        body: JSON.stringify({
+          token: token,
+          burstId: burst.burstId,
+          seq: burst.seq,
+          framesTotal: burst.framesTotal,
+        }),
       }).then(function (body) {
         return body.requestId;
       });
@@ -94,6 +111,7 @@
     var seq = 0;
     var capture = null;
     var photos = [];
+    var print = null;
     var pending = [];
     function at(ms, fn) {
       pending.push(setTimeout(fn, ms));
@@ -104,25 +122,40 @@
         pending = [];
         capture = null;
         photos = [];
+        print = null;
         return api('/kiosk/api/session?demo=1', { method: 'POST' });
       },
-      requestCapture: function () {
+      // Mirrors the Pi with COUNTDOWN_MS=0: claim, ~1.5s to the shutter, upload.
+      requestCapture: function (token, burst) {
         var id = 'demo-' + ++seq;
         capture = { requestId: id, status: 'counting_down', error: null };
-        at(3000, function () {
+        at(1500, function () {
           capture = { requestId: id, status: 'capturing', error: null };
         });
-        at(3600, function () {
+        at(2100, function () {
           capture = { requestId: id, status: 'uploading', error: null };
         });
-        at(4200, function () {
-          photos.push(fakePhoto(photos.length + 1));
+        at(2700, function () {
+          photos[burst.seq] = fakePhoto(burst.seq + 1);
           capture = { requestId: id, status: 'complete', error: null };
         });
+        // The last frame of a full strip queues a sheet; a SELPHY pass is ~41s,
+        // shortened here so the handoff screen's states can be seen.
+        if (burst.seq === burst.framesTotal - 1 && burst.framesTotal === 4) {
+          at(2700, function () {
+            print = { status: 'queued', detail: null, error: null };
+          });
+          at(4500, function () {
+            print = { status: 'printing', detail: 'job 1', error: null };
+          });
+          at(12000, function () {
+            print = { status: 'printed', detail: null, error: null };
+          });
+        }
         return Promise.resolve(id);
       },
       getState: function () {
-        return Promise.resolve({ capture: capture, photos: photos.slice() });
+        return Promise.resolve({ capture: capture, photos: photos.filter(Boolean), print: print });
       },
     };
   })();
@@ -155,16 +188,22 @@
 
   var session = null; // { token, shortCode, qr }
   var generation = 0; // bumped per guest so a late session mint can't leak in
-  var run = null; // { shot, requestId, startedAt, status, landed }
+  var burstId = null; // one per run of SHOTS; a retried shot re-sends it
+  var run = null; // { shot, requestId, startedAt, sent, status, landed }
   var strip = []; // url per landed shot, by slot
-  var timers = { tick: null, poll: null, stage: null, hold: null };
+  var timers = { tick: null, poll: null, stage: null, hold: null, print: null };
 
   function clearTimers() {
     clearInterval(timers.tick);
     clearInterval(timers.poll);
+    clearInterval(timers.print);
     clearTimeout(timers.stage);
     clearTimeout(timers.hold);
-    timers.tick = timers.poll = timers.stage = timers.hold = null;
+    timers.tick = timers.poll = timers.print = timers.stage = timers.hold = null;
+  }
+
+  function mintBurstId() {
+    return 'kiosk-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
 
   function setScreen(name) {
@@ -189,8 +228,10 @@
     clearTimers();
     session = null;
     run = null;
+    burstId = null;
     strip = [];
     buildStrip();
+    el.printState.hidden = true;
     el.start.disabled = true;
     el.startTitle.textContent = 'Warming up…';
     setScreen('idle');
@@ -215,24 +256,34 @@
 
   function fire(shot) {
     clearTimers();
-    run = { shot: shot, requestId: null, startedAt: Date.now(), status: 'sent', landed: false };
+    run = { shot: shot, requestId: null, startedAt: Date.now(), sent: false, status: 'armed', landed: false };
     lastDigit = null;
     setScreen('shoot');
     renderPips(shot);
     showStage('num');
     tick();
     timers.tick = setInterval(tick, 100);
+  }
+
+  // The request itself. Called from the ticker SHUTTER_LEAD_MS before zero, so
+  // the Pi's shutter (which fires ~1.5-2s after it sees the row) lands on
+  // "SMILE" rather than on "2".
+  function sendCapture() {
+    if (!run || run.sent) return;
+    run.sent = true;
+    run.status = 'sent';
     timers.poll = setInterval(poll, POLL_MS);
     armStageTimeout();
 
     var mine = run;
-    booth.requestCapture(session.token).then(
+    var burst = { burstId: burstId, seq: run.shot - 1, framesTotal: SHOTS };
+    booth.requestCapture(session.token, burst).then(
       function (requestId) {
         if (run === mine) run.requestId = requestId;
       },
       function (error) {
         console.error('[kiosk] capture request failed:', error);
-        if (run === mine && !run.landed) fail("We couldn't reach the booth.");
+        if (run === mine && !run.landed) fail("We couldn't reach the booth. " + (error && error.message ? error.message : ''));
       },
     );
   }
@@ -240,7 +291,9 @@
   var lastDigit = null;
   function tick() {
     if (!run || run.landed) return;
-    var left = Math.ceil((COUNTDOWN_MS - (Date.now() - run.startedAt)) / 1000);
+    var elapsed = Date.now() - run.startedAt;
+    if (!run.sent && elapsed >= COUNTDOWN_MS - SHUTTER_LEAD_MS) sendCapture();
+    var left = Math.ceil((COUNTDOWN_MS - elapsed) / 1000);
     if (left > 0) {
       if (left !== lastDigit) {
         lastDigit = left;
@@ -251,6 +304,7 @@
       // shutter never leaves the screen ahead of the camera.
       clearInterval(timers.tick);
       timers.tick = null;
+      sendCapture(); // only if the lead ever exceeds the count
       showStage('smile');
     }
   }
@@ -294,7 +348,11 @@
   function armStageTimeout() {
     clearTimeout(timers.stage);
     timers.stage = setTimeout(function () {
-      if (run && !run.landed) fail("The booth didn't answer.");
+      if (!run || run.landed) return;
+      // Say which stage stalled: "never picked it up" is the listener being
+      // down or busy; a stall at uploading is the Pi's link to Convex.
+      var stage = run.status === 'sent' ? 'never picked the request up' : 'stalled at ' + run.status.replace('_', ' ');
+      fail("The booth didn't answer (" + stage + ').');
     }, STAGE_TIMEOUT_MS);
   }
 
@@ -359,6 +417,44 @@
       el.donePhotos.appendChild(tile);
     });
     setScreen('done');
+    // Every frame of a full strip is on the Pi's disk, so the sheet is already
+    // queued locally; from here we only mirror what the print agent reports.
+    if (strip.filter(Boolean).length === SHOTS && SHOTS === 4) {
+      renderPrintState({ status: 'queued' });
+      pollPrint();
+      timers.print = setInterval(pollPrint, PRINT_POLL_MS);
+    }
+  }
+
+  function pollPrint() {
+    if (!session) return;
+    var mine = generation;
+    booth.getState(session.token).then(
+      function (state) {
+        if (mine !== generation || !state.print) return;
+        renderPrintState(state.print);
+        if (state.print.status === 'printed' || state.print.status === 'failed') {
+          clearInterval(timers.print);
+          timers.print = null;
+        }
+      },
+      function () {},
+    );
+  }
+
+  var PRINT_LABELS = {
+    queued: ['is-busy', '🖨 Printing your strips…'],
+    composing: ['is-busy', '🖨 Printing your strips…'],
+    printing: ['is-busy', '🖨 Printing your strips…'],
+    printed: ['is-out', '✂ Strips are out — grab them!'],
+    blocked: ['is-blocked', '⚠ Printer needs attention'],
+    failed: ['is-blocked', "⚠ Print didn't finish — photos are on your phone"],
+  };
+  function renderPrintState(print) {
+    var entry = PRINT_LABELS[print.status] || ['is-busy', '🖨 ' + print.status];
+    el.printState.className = 'print-state ' + entry[0];
+    el.printState.textContent = entry[1];
+    el.printState.hidden = false;
   }
 
   var failedShot = 1;
@@ -412,6 +508,7 @@
 
   el.start.addEventListener('click', function () {
     if (!session || run) return;
+    burstId = mintBurstId();
     fire(1);
   });
   el.retry.addEventListener('click', function () {

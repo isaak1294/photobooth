@@ -94,6 +94,7 @@ function render({ shots, demo }: { shots: number; demo: boolean }): string {
       <p class="sub">Every shot, plus AI styles, on your phone.</p>
       <div class="qr-plate"><img id="qr" alt="Scan for your photos"></div>
       <p id="done-code" class="code mono"></p>
+      <p id="print-state" class="print-state" hidden></p>
       <button id="next" class="btn btn-ink display" type="button">Next guest →</button>
     </div>
   </section>

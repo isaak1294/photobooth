@@ -365,6 +365,29 @@ body {
   letter-spacing: 0.2em;
 }
 
+/* Print agent status on the handoff screen (printing… / strips are out / needs
+   attention). Colour carries the state so it reads from across the table. */
+.print-state {
+  margin: 2vmin 0 0;
+  padding: 1vmin 2.4vmin;
+  border: 2px solid #000;
+  background: #fff;
+  font-size: 2.2vmin;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0 0 #000;
+  transform: rotate(-1deg);
+}
+.print-state.is-busy {
+  animation: kiosk-pulse 1.2s ease-in-out infinite;
+}
+.print-state.is-out {
+  background: #a8ff60;
+}
+.print-state.is-blocked {
+  background: #ff2d95;
+  color: #fff;
+}
+
 @media (orientation: landscape) {
   .done {
     flex-direction: row;

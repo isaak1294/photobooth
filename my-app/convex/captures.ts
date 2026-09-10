@@ -72,6 +72,10 @@ export const pendingCaptures = query({
       burstId: v.union(v.string(), v.null()),
       seq: v.union(v.number(), v.null()),
       framesTotal: v.union(v.number(), v.null()),
+      // When the request was written. A request that sat pending while the Pi
+      // was offline is not a guest still standing there — the listener expires
+      // it rather than shooting it.
+      createdAt: v.number(),
     }),
   ),
   handler: async (ctx, { secret }) => {
@@ -91,6 +95,7 @@ export const pendingCaptures = query({
           burstId: r.burstId ?? null,
           seq: r.seq ?? null,
           framesTotal: r.framesTotal ?? null,
+          createdAt: r._creationTime,
         });
       }
     }

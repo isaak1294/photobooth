@@ -42,9 +42,20 @@ reached the server on — which on a LAN dev server is the machine's IP, i.e.
 what a phone on the same Wi-Fi needs. `/kiosk?demo=1` runs the whole loop with
 a simulated booth.
 
-The kiosk runs its own 3-2-1 on screen and fires the capture request on the same
-tick, which lines up with the Pi's default `COUNTDOWN_MS=3000`. Leave that alone;
-setting it to 0 makes the kiosk shoot three seconds early.
+The kiosk owns the countdown. The Pi runs with `COUNTDOWN_MS=0` (see
+`pi/README.md`) and shoots ~1.5–2s after it sees a request, so the kiosk sends
+the request `SHUTTER_LEAD_MS` (1.8s) before its on-screen count hits zero and
+the shutter lands on "SMILE". If the Pi were left at the old 3000ms default the
+shot would land ~3s late and "SMILE" would hold until it did — not broken, just
+slow.
+
+**Printing is automatic.** Every kiosk capture carries `{burstId, seq,
+framesTotal}`; when the Pi writes the 4th frame it drops a print job on its
+local spool and the print agent composes one sheet (two identical 4-photo
+strips, one centre cut). The handoff screen polls the agent's status report
+and says "printing…" / "strips are out". `?shots=` other than 4 never prints —
+`STRIP_FRAMES` in the listener and `StripLayout.photos` in
+`photobooth_print.py` are both 4.
 
 Use `npx next dev`, **not `npm run dev`** — the latter runs `convex dev`, which
 spins up a local deployment and overwrites the cloud URLs in your `.env.local`

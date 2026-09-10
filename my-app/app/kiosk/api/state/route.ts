@@ -1,10 +1,11 @@
 import { api } from '@/convex/_generated/api';
 import { convexClient, json } from '@/lib/kioskServer';
 
-// GET /kiosk/api/state?token= → { capture, photos }
-// Polled by the page while a shot is in flight — it stands in for the live
-// subscription the other surfaces use. Only the latest capture's lifecycle and
-// the photo URLs, in capture order.
+// GET /kiosk/api/state?token= → { capture, photos, print }
+// Polled by the page while a shot is in flight, and again on the handoff screen
+// for the print status — it stands in for the live subscription the other
+// surfaces use. The latest capture's lifecycle, the photo URLs in capture order,
+// and the Pi print agent's latest report for this session.
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
@@ -22,6 +23,9 @@ export async function GET(request: Request) {
         ? { requestId: session.capture.requestId, status: session.capture.status, error: session.capture.error }
         : null,
       photos: session.photos.map((photo) => photo.url).filter((url): url is string => url !== null),
+      print: session.print
+        ? { status: session.print.status, detail: session.print.detail, error: session.print.error }
+        : null,
     });
   } catch (error) {
     console.error('[kiosk] state poll failed:', error);
