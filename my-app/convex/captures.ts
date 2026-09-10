@@ -1,11 +1,15 @@
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import { captureStatus, ACTIVE_CAPTURE_STATUSES } from './captureStatus';
 
-// PHONE -> writes the shutter signal. Called by the Take Picture button.
+// PHONE/KIOSK -> writes the shutter signal. Called by the Take Picture button.
 // Rejects if this session already has a capture in flight, so a double-tap (or
 // two phones on the same session) can't queue overlapping shots. The whole
 // handler is one Convex transaction, so the read-then-insert is atomic.
+//
+// Rejections are ConvexError, not Error: a production deployment redacts a
+// plain Error to "Server Error" before it reaches the client, and the kiosk
+// operator standing at the table needs to read the actual reason.
 export const requestCapture = mutation({
   args: {
     token: v.string(),
@@ -22,19 +26,19 @@ export const requestCapture = mutation({
   },
   returns: v.id('captureRequests'),
   handler: async (ctx, { token, burstId, seq, framesTotal, theme }) => {
-    if (theme !== undefined && !/^[a-z0-9-]{1,32}$/.test(theme)) throw new Error('Invalid theme');
+    if (theme !== undefined && !/^[a-z0-9-]{1,32}$/.test(theme)) throw new ConvexError('Invalid theme');
     const session = await ctx.db
       .query('sessions')
       .withIndex('by_token', (q) => q.eq('token', token))
       .unique();
-    if (session === null) throw new Error('Unknown session token');
+    if (session === null) throw new ConvexError('Unknown session token');
 
     const existing = await ctx.db
       .query('captureRequests')
       .withIndex('by_session', (q) => q.eq('sessionId', session._id))
       .collect();
     if (existing.some((r) => ACTIVE_CAPTURE_STATUSES.includes(r.status))) {
-      throw new Error('A capture is already in progress for this session');
+      throw new ConvexError('A capture is already in progress for this session');
     }
 
     return await ctx.db.insert('captureRequests', {

@@ -1,3 +1,4 @@
+import { ConvexError } from 'convex/values';
 import { api } from '@/convex/_generated/api';
 import { convexClient, json } from '@/lib/kioskServer';
 
@@ -32,6 +33,14 @@ export async function POST(request: Request) {
     return json({ requestId });
   } catch (error) {
     console.error('[kiosk] capture request failed:', error);
-    return json({ error: error instanceof Error ? error.message : 'Capture request failed' }, 409);
+    // ConvexError carries the mutation's real reason through a production
+    // deployment; anything else was redacted to "Server Error" upstream.
+    const reason =
+      error instanceof ConvexError
+        ? String(error.data)
+        : error instanceof Error
+          ? error.message
+          : 'Capture request failed';
+    return json({ error: reason }, 409);
   }
 }
