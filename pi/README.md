@@ -34,23 +34,46 @@ Verify the camera is free before starting the listener:
 rpicam-jpeg -o /tmp/test.jpg -t 1000 -n && echo "camera is free"
 ```
 
+## Power-cycling the Pi
+
+**Shut down before pulling power** — yanking it on a running Pi risks corrupting
+the SD card.
+
+```bash
+sudo shutdown -h now
+```
+
+Wait for the green activity LED to stop blinking, then unplug. After plugging
+back in, give it ~45s to boot and start the listener again — it does not come
+back on its own unless installed as a service (below).
+
 ## Run the listener
 
 Needs Node 18+ on the Pi (`sudo apt install -y nodejs npm`, or nodesource for a
-current version).
+current version). `~/booth` holds the script and its one dependency:
 
 ```bash
-cd ~/photobooth/my-app
-npm install
+cd ~/booth
+npm install convex        # first time only
 
-CONVEX_URL=<NEXT_PUBLIC_CONVEX_URL> \
-CONVEX_SITE_URL=<NEXT_PUBLIC_CONVEX_SITE_URL> \
-BOOTH_SECRET=<the shared secret> \
-node scripts/pi-listener.mjs
+CONVEX_URL=https://jovial-bullfrog-243.convex.cloud \
+CONVEX_SITE_URL=https://jovial-bullfrog-243.convex.site \
+BOOTH_SECRET=<ask the team — not in this repo> \
+COUNTDOWN_MS=0 \
+node pi-listener.mjs
 ```
 
 Expect `Booth listener running. Waiting for capture requests…`, then one
-`✅ captured + uploaded for <token>` per shot.
+`✅ complete for <token>` per shot.
+
+`COUNTDOWN_MS=0` because the *frontend* owns the countdown. Leave it unset and
+the Pi waits another 3s after the on-screen countdown finishes.
+
+Verify from a laptop, without touching a browser:
+
+```bash
+cd my-app && node scripts/verify-capture.mjs
+```
 
 `BOOTH_SECRET` must match the value set on the deployment
 (`npx convex env set BOOTH_SECRET ...`). If it doesn't, `pendingCaptures` throws
