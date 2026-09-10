@@ -19,6 +19,8 @@ Design notes
   and submitted with print-scaling=none so nothing re-scales it.
 * `cups` is imported lazily so the composition half of this module runs on a
   laptop with no printer attached.
+* The strip's colours, caption and ornaments are a THEME (StripLayout preset in
+  THEMES), picked per event with BOOTH_THEME / --theme. Geometry is shared.
 
 Dependencies on the Pi:
     sudo apt install -y python3-pil python3-cups
@@ -96,9 +98,16 @@ def read_page_size_px(printer: str, page_size: str) -> tuple[int, int]:
 # --------------------------------------------------------------------------
 
 
+RGB = tuple[int, int, int]
+
+
 @dataclass
 class StripLayout:
-    """All strip geometry in millimetres so it stays DPI-independent."""
+    """All strip geometry in millimetres so it stays DPI-independent.
+
+    The colour/text fields are the THEME. Presets live in THEMES below and are
+    chosen with BOOTH_THEME (env) or --theme (CLI); the geometry defaults are
+    shared by all of them."""
 
     photos: int = 4
     outer_margin_mm: float = 2.5
@@ -107,9 +116,55 @@ class StripLayout:
     # caption until it fits the 530px cell width, which lands around 30px tall.
     # 10mm still clears the text and gives each of the four cells ~23px back.
     footer_mm: float = 10.0
+    # Footer copy: the big line, and an optional small line under it.
     footer_text: str = "THE BOOTH  ·  2026"
-    background: tuple[int, int, int] = (255, 255, 255)
-    footer_colour: tuple[int, int, int] = (25, 25, 25)
+    footer_subtext: str = ""
+    background: RGB = (255, 255, 255)
+    footer_colour: RGB = (25, 25, 25)
+    footer_subcolour: RGB = (25, 25, 25)
+    # Keyline drawn around each photo cell, 0 for none.
+    cell_border_mm: float = 0.0
+    cell_border_colour: RGB = (0, 0, 0)
+    # Lightning bolts either side of the footer text (Thunderfest).
+    footer_bolts: bool = False
+    bolt_colour: RGB = (255, 184, 28)
+
+
+# UVic Vikes navy + gold. Approximations of the brand Pantones (2955 C / 1235 C),
+# tuned so the gold still reads as gold on dye-sub rather than going mustard.
+UVIC_NAVY: RGB = (0, 58, 112)
+UVIC_GOLD: RGB = (255, 184, 28)
+
+THEMES: dict[str, StripLayout] = {
+    # Plain white strip, dark caption. What the booth printed before themes.
+    "classic": StripLayout(),
+    # UVic Thunderfest: navy strip, gold keylines, bolts around the wordmark.
+    # 14mm footer instead of 10 to fit the two-line lockup; each cell gives up
+    # ~1mm of height for it.
+    "thunderfest": StripLayout(
+        footer_mm=14.0,
+        footer_text="THUNDERFEST",
+        footer_subtext="UVIC  ·  2026",
+        background=UVIC_NAVY,
+        footer_colour=UVIC_GOLD,
+        footer_subcolour=(255, 255, 255),
+        cell_border_mm=0.6,
+        cell_border_colour=UVIC_GOLD,
+        footer_bolts=True,
+        bolt_colour=UVIC_GOLD,
+    ),
+}
+DEFAULT_THEME = "thunderfest"
+
+
+def layout_from_env() -> StripLayout:
+    """The strip theme for this event: BOOTH_THEME, else the default. An
+    unknown name is a loud failure at startup, not a white strip at 9pm."""
+    name = os.environ.get("BOOTH_THEME", DEFAULT_THEME)
+    try:
+        return THEMES[name]
+    except KeyError:
+        raise SystemExit(f"BOOTH_THEME={name!r} is not one of: {', '.join(THEMES)}") from None
 
 
 @dataclass
@@ -172,22 +227,83 @@ def build_strip(
         raise ValueError("strip margins/footer leave no room for photos")
 
     strip = Image.new("RGB", (width, height), layout.background)
+    draw = ImageDraw.Draw(strip)
+    border = mm_to_px(layout.cell_border_mm)
     for i, photo in enumerate(photos[:n]):
         y = margin + i * (cell_h + gutter)
-        strip.paste(fill_cell(photo, cell_w, cell_h), (margin, y))
+        # The keyline sits INSIDE the cell so the geometry above still holds;
+        # the photo shrinks by the line width on each side.
+        if border > 0:
+            draw.rectangle([margin, y, margin + cell_w - 1, y + cell_h - 1], fill=layout.cell_border_colour)
+        strip.paste(
+            fill_cell(photo, cell_w - 2 * border, cell_h - 2 * border),
+            (margin + border, y + border),
+        )
 
     if layout.footer_text:
-        draw = ImageDraw.Draw(strip)
-        font, box = _fit_text(draw, layout.footer_text, cell_w, int(footer * 0.55))
-        text_w, text_h = box[2] - box[0], box[3] - box[1]
-        draw.text(
-            ((width - text_w) // 2 - box[0],
-             height - margin - footer // 2 - text_h // 2 - box[1]),
-            layout.footer_text,
-            font=font,
-            fill=layout.footer_colour,
-        )
+        _draw_footer(draw, layout, width, height, margin, footer, cell_w)
     return strip
+
+
+def _draw_footer(
+    draw: ImageDraw.ImageDraw, layout: StripLayout, width: int, height: int, margin: int, footer: int, cell_w: int
+) -> None:
+    """The caption band at the bottom of the strip: one big line, an optional
+    small line, and optional lightning bolts flanking the big one."""
+    top = height - margin - footer
+    has_sub = bool(layout.footer_subtext)
+
+    # Bolts take a square zone at each end of the band; the text fits between.
+    bolt_h = int(footer * (0.62 if has_sub else 0.8))
+    bolt_w = int(bolt_h * 0.55)
+    bolt_pad = int(footer * 0.12)
+    text_max = cell_w - (2 * (bolt_w + bolt_pad) if layout.footer_bolts else 0)
+
+    title_start = int(footer * (0.42 if has_sub else 0.55))
+    font, box = _fit_text(draw, layout.footer_text, text_max, title_start)
+    text_w, text_h = box[2] - box[0], box[3] - box[1]
+
+    if has_sub:
+        sub_font, sub_box = _fit_text(draw, layout.footer_subtext, text_max, int(footer * 0.2))
+        sub_w, sub_h = sub_box[2] - sub_box[0], sub_box[3] - sub_box[1]
+        gap = int(footer * 0.08)
+        block_h = text_h + gap + sub_h
+    else:
+        sub_font = sub_box = None
+        sub_w = sub_h = gap = 0
+        block_h = text_h
+
+    block_top = top + (footer - block_h) // 2
+    title_x = (width - text_w) // 2
+    draw.text((title_x - box[0], block_top - box[1]), layout.footer_text, font=font, fill=layout.footer_colour)
+    if sub_font is not None and sub_box is not None:
+        draw.text(
+            ((width - sub_w) // 2 - sub_box[0], block_top + text_h + gap - sub_box[1]),
+            layout.footer_subtext,
+            font=sub_font,
+            fill=layout.footer_subcolour,
+        )
+
+    if layout.footer_bolts:
+        # Centred on the title line, just outside it on both sides. The right
+        # one is mirrored so the pair points inward.
+        bolt_top = block_top + text_h // 2 - bolt_h // 2
+        left_x = title_x - bolt_pad - bolt_w
+        right_x = title_x + text_w + bolt_pad
+        _draw_bolt(draw, left_x, bolt_top, bolt_w, bolt_h, layout.bolt_colour)
+        _draw_bolt(draw, right_x, bolt_top, bolt_w, bolt_h, layout.bolt_colour, mirror=True)
+
+
+# A lightning bolt in a unit box, top-left origin. Zig down-left, kick out to
+# the right, zig down-left to the tip.
+_BOLT_UNIT = [(0.62, 0.0), (0.12, 0.56), (0.44, 0.56), (0.30, 1.0), (0.92, 0.40), (0.56, 0.40), (0.78, 0.0)]
+
+
+def _draw_bolt(
+    draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, colour: RGB, mirror: bool = False
+) -> None:
+    points = [(x + (w * (1 - ux) if mirror else w * ux), y + h * uy) for ux, uy in _BOLT_UNIT]
+    draw.polygon(points, fill=colour)
 
 
 def build_sheet(
@@ -345,7 +461,7 @@ class PrintTask:
     burst_id: str = ""
     # Carried so the status callback can report to Convex without a lookup.
     token: str = ""
-    strip_layout: StripLayout = field(default_factory=StripLayout)
+    strip_layout: StripLayout = field(default_factory=layout_from_env)
     sheet_layout: SheetLayout = field(default_factory=SheetLayout)
     attempts: int = 0
 
@@ -526,13 +642,19 @@ def main() -> None:
     parser.add_argument("--printer", default=os.environ.get("BOOTH_PRINTER", "selphy"))
     parser.add_argument("--page-size", default=os.environ.get("BOOTH_PAGE_SIZE", "Postcard"))
     parser.add_argument("--strips", type=int, default=2)
+    parser.add_argument(
+        "--theme",
+        choices=sorted(THEMES),
+        default=os.environ.get("BOOTH_THEME", DEFAULT_THEME),
+        help="strip theme (default: $BOOTH_THEME or %(default)s)",
+    )
     parser.add_argument("--print", dest="do_print", action="store_true")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     sheet_px = read_page_size_px(args.printer, args.page_size)
-    strip_layout = StripLayout()
+    strip_layout = THEMES[args.theme]
     photos = (
         [Image.open(p) for p in args.photos]
         if args.photos

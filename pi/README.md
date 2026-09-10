@@ -112,8 +112,18 @@ COUNTDOWN_MS=0
 BOOTH_SPOOL_DIR=/var/lib/booth
 BOOTH_PRINTER=selphy-net
 BOOTH_PAGE_SIZE=jpn_hagaki_100x148mm
+BOOTH_THEME=thunderfest
 EOF
 sudo chmod 600 /etc/booth.env
+```
+
+`BOOTH_THEME` picks the strip's colours, caption and ornaments — `thunderfest`
+(UVic navy and gold, bolts around the wordmark) or `classic` (white, plain
+caption). Presets are `THEMES` in `photobooth_print.py`; the year and the
+caption text live there too. Preview one without a printer:
+
+```bash
+python3 photobooth_print.py --theme thunderfest --out /tmp/preview.pdf   # also writes /tmp/preview.png
 ```
 
 `COUNTDOWN_MS=0` because the *frontend* owns the countdown. Leave it unset and
