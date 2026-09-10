@@ -21,15 +21,26 @@ npx next dev
 - **`/s/<token>`** — the phone gallery, opened from either QR.
 
 `npm run nobooth` runs every surface against a simulated booth — no Convex, Pi,
-or camera needed.
+or camera needed (the kiosk also takes `?demo=1`).
 
 ### Running the kiosk on an iPad
 
-Open `/kiosk` in Safari and **Add to Home Screen**, so it launches without
-browser chrome. Turn Auto-Lock off in Settings (the page requests a screen wake
-lock, but that is iPadOS 16.4+ and can be refused), and set Guided Access if the
-iPad will be unattended. The kiosk needs `NEXT_PUBLIC_BOOTH_PUBLIC_URL` set to
-an address the *guest's phone* can reach — the QR is useless otherwise.
+The kiosk is an **iPad mini 3 on iOS 12.3** (Safari 12.1). That browser can't
+parse the rest of the app — Next's bundle, Tailwind v4, the Convex client — so
+`/kiosk` is deliberately not a React page: `app/kiosk/route.ts` serves a
+hand-written document, `public/kiosk.css` + `public/kiosk.js` are written to
+Safari 12's limits (no `clamp()`, no flex `gap`, no `?.`), and the page talks
+only to `/kiosk/api/*` on its own origin, which proxies to Convex server-side.
+Keep it that way when editing: `node -e` with acorn at `ecmaVersion: 2017` is
+the cheap check for the script. Nothing else in the app is affected.
+
+On the iPad: open `/kiosk` in Safari and **Add to Home Screen** so it launches
+without browser chrome. Set **Auto-Lock to Never** (iOS 12 has no wake-lock API)
+and turn on Guided Access if it will be unattended. The QR points at
+`NEXT_PUBLIC_BOOTH_PUBLIC_URL` if set, otherwise at whatever address the iPad
+reached the server on — which on a LAN dev server is the machine's IP, i.e.
+what a phone on the same Wi-Fi needs. `/kiosk?demo=1` runs the whole loop with
+a simulated booth.
 
 The kiosk runs its own 3-2-1 on screen and fires the capture request on the same
 tick, which lines up with the Pi's default `COUNTDOWN_MS=3000`. Leave that alone;

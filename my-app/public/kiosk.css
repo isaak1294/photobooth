@@ -1,0 +1,521 @@
+/* POPFLASH kiosk — /kiosk (app/kiosk/route.ts).
+   Written for Safari 12.1 (iPad mini 3, iOS 12.3), which is why this is plain
+   CSS rather than Tailwind: no cascade layers, no @property, no clamp()/min(),
+   no dvh, no gap on flex containers (margins instead), no aspect-ratio.
+   Sizes are in vmin so they read the same in either orientation on the iPad. */
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #ffde03;
+  color: #000;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Space Grotesk', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+
+/* Archivo Black is display-only and has one weight. Until it has loaded (or if
+   the venue has no signal) the heaviest system face stands in; kiosk.js adds
+   .fonts-ready once the real one is in. */
+.display {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.fonts-ready .display {
+  font-family: 'Archivo Black', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 400;
+}
+.mono {
+  font-family: Menlo, Courier, monospace;
+}
+.pink {
+  color: #ff2d95;
+}
+
+/* Fixed to the real viewport: 100vh on iOS Safari includes the browser chrome,
+   a fixed box does not. The dot grid is the shared POPFLASH texture. */
+#app {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 2vmin 3vmin;
+  padding-top: calc(2vmin + env(safe-area-inset-top));
+  padding-bottom: calc(2vmin + env(safe-area-inset-bottom));
+  background-image: radial-gradient(rgba(0, 0, 0, 0.08) 1.5px, transparent 1.6px);
+  background-size: 22px 22px;
+}
+
+/* --- header ----------------------------------------------------------------- */
+.top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.wordmark {
+  display: inline-block;
+  font-size: 4.2vmin;
+  transform: rotate(-2deg);
+}
+.chips {
+  display: flex;
+  align-items: center;
+}
+.chip {
+  display: inline-block;
+  margin-left: 1vmin;
+  padding: 0.6vmin 1.4vmin;
+  border: 2px solid #000;
+  font-size: 1.7vmin;
+  font-weight: 700;
+  box-shadow: 3px 3px 0 0 #000;
+}
+.chip-paper {
+  background: #fff;
+}
+.chip-violet {
+  background: #b28dff;
+}
+#chip-reconnect {
+  animation: kiosk-pulse 1.2s ease-in-out infinite;
+}
+
+/* --- screens ---------------------------------------------------------------- */
+.screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- idle ------------------------------------------------------------------- */
+.sticker {
+  margin: 0 0 4vmin;
+  padding: 1.2vmin 2.4vmin;
+  border: 2px solid #000;
+  background: #fff;
+  font-size: 2.2vmin;
+  box-shadow: 4px 4px 0 0 #000;
+  transform: rotate(1deg);
+}
+/* The nudge lives on a wrapper: an animation on the button itself would outrank
+   its :active transform and kill the press feedback. */
+.nudge {
+  width: 90%;
+  animation: kiosk-nudge 5s ease-in-out infinite;
+}
+.start {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 6vmin 4vmin;
+  border: 6px solid #000;
+  background: #000;
+  color: #ffde03;
+  box-shadow: 8px 8px 0 0 #ff2d95;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    transform 90ms ease-out,
+    box-shadow 90ms ease-out;
+}
+.start:active {
+  transform: translate(8px, 8px);
+  box-shadow: none;
+}
+.start:disabled {
+  opacity: 0.4;
+}
+.start-title {
+  display: block;
+  font-size: 15vmin;
+  line-height: 0.85;
+}
+.start-sub {
+  display: block;
+  margin-top: 2.5vmin;
+  font-size: 2.6vmin;
+  letter-spacing: 0.04em;
+}
+.hint {
+  max-width: 80vmin;
+  margin: 4vmin 0 0;
+  text-align: center;
+  font-size: 2.4vmin;
+}
+
+/* --- shooting --------------------------------------------------------------- */
+.shoot {
+  justify-content: space-between;
+  padding: 1vmin 0;
+}
+.pips {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.pips-label {
+  font-size: 3vmin;
+}
+.pips-boxes {
+  display: flex;
+  margin-left: 2vmin;
+}
+.pip {
+  width: 3vmin;
+  height: 3vmin;
+  margin-left: 1vmin;
+  border: 2px solid #000;
+  background: #fff;
+}
+.pip.is-done {
+  background: #000;
+}
+.pip.is-current {
+  background: #ff2d95;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.num,
+.outline {
+  color: #fff;
+  text-shadow:
+    5px 5px 0 #000,
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000;
+}
+.num {
+  font-size: 40vmin;
+  line-height: 1;
+  animation: kiosk-slam 0.35s ease-out;
+}
+.look {
+  margin: 1vmin 0 0;
+  font-size: 3.4vmin;
+  text-transform: uppercase;
+}
+.smile {
+  font-size: 18vmin;
+  line-height: 1;
+  color: #fff;
+  text-shadow:
+    5px 5px 0 #000,
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000;
+}
+
+/* The photo that just landed, shown big before it flies down into the strip.
+   The frame is what animates (kiosk.js sets an inline transform on it), so it
+   carries no transform of its own once kiosk-pop has finished — no fill-mode. */
+.big {
+  position: relative;
+}
+.big-frame {
+  border: 4px solid #000;
+  background: #fff;
+  box-shadow: 8px 8px 0 0 #000;
+  animation: kiosk-pop 0.3s ease-out;
+}
+.big-frame img {
+  display: block;
+  width: 72vmin;
+  height: 40.5vmin;
+  object-fit: cover;
+}
+.gotit {
+  position: absolute;
+  right: -3vmin;
+  bottom: -4vmin;
+  padding: 1.2vmin 3vmin;
+  border: 4px solid #000;
+  background: #a8ff60;
+  font-size: 6vmin;
+  box-shadow: 6px 6px 0 0 #000;
+  transform: rotate(-4deg);
+  animation: kiosk-stamp 0.3s ease-out 0.1s both;
+}
+
+/* The strip: one 16:9 slot per shot, same shape as the big frame so the fly-in
+   is a uniform scale. */
+.strip {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.slot {
+  width: 18vmin;
+  height: 10.125vmin;
+  margin: 0 1vmin;
+  border: 4px dashed #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3vmin;
+  opacity: 0.35;
+}
+.slot:nth-child(odd) {
+  transform: rotate(-2deg);
+}
+.slot:nth-child(even) {
+  transform: rotate(2deg);
+}
+.slot.is-filled {
+  opacity: 1;
+  border-style: solid;
+  background: #fff;
+  box-shadow: 4px 4px 0 0 #000;
+}
+.slot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: kiosk-pop 0.25s ease-out;
+}
+
+/* --- handoff ---------------------------------------------------------------- */
+.done-photos {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 3vmin;
+}
+.tile {
+  margin: 0 1vmin;
+  padding: 0.8vmin;
+  border: 4px solid #000;
+  background: #fff;
+  box-shadow: 4px 4px 0 0 #000;
+}
+.tile:nth-child(odd) {
+  transform: rotate(-2deg);
+}
+.tile:nth-child(even) {
+  transform: rotate(2deg);
+}
+.tile img {
+  display: block;
+  width: 20vmin;
+  height: 11.25vmin;
+  object-fit: cover;
+}
+.done-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.h2 {
+  margin: 0;
+  font-size: 6vmin;
+  line-height: 1;
+  text-align: center;
+}
+.sub {
+  margin: 1.2vmin 0 0;
+  font-size: 2.3vmin;
+  text-align: center;
+}
+.qr-plate {
+  margin-top: 2vmin;
+  padding: 1.5vmin;
+  border: 4px solid #000;
+  background: #fff;
+  box-shadow: 10px 10px 0 0 #000;
+}
+.qr-plate img {
+  display: block;
+  width: 34vmin;
+  height: 34vmin;
+}
+.code {
+  margin: 2vmin 0 0;
+  font-size: 3vmin;
+  letter-spacing: 0.2em;
+}
+
+@media (orientation: landscape) {
+  .done {
+    flex-direction: row;
+  }
+  .done-photos {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-gap: 2vmin;
+    margin: 0 8vmin 0 0;
+  }
+  .tile {
+    margin: 0;
+  }
+  .tile img {
+    width: 26vmin;
+    height: 14.625vmin;
+  }
+}
+
+/* --- buttons & panels --------------------------------------------------------- */
+.btn {
+  margin: 3vmin 1vmin 0;
+  padding: 2.2vmin 5vmin;
+  border: 4px solid #000;
+  font-size: 3.4vmin;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    transform 90ms ease-out,
+    box-shadow 90ms ease-out;
+}
+.btn:active {
+  transform: translate(6px, 6px);
+  box-shadow: none !important;
+}
+.btn-ink {
+  background: #000;
+  color: #ffde03;
+  box-shadow: 6px 6px 0 0 #ff2d95;
+}
+.btn-paper {
+  background: #fff;
+  color: #000;
+  box-shadow: 6px 6px 0 0 #000;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.panel {
+  max-width: 80vmin;
+  padding: 5vmin;
+  border: 4px solid #000;
+  text-align: center;
+  box-shadow: 10px 10px 0 0 #000;
+}
+.panel-pink {
+  background: #ff2d95;
+  color: #fff;
+  transform: rotate(-1deg);
+}
+.panel-paper {
+  background: #fff;
+  transform: rotate(1deg);
+}
+.panel .h2 {
+  font-size: 8vmin;
+}
+.panel-body {
+  margin: 2.5vmin 0 0;
+  font-size: 2.8vmin;
+}
+
+/* --- shutter flash ------------------------------------------------------------ */
+#flash {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+#flash.go {
+  animation: kiosk-flash 0.45s ease-out forwards;
+}
+
+/* --- motion --------------------------------------------------------------------- */
+@keyframes kiosk-slam {
+  0% {
+    opacity: 0;
+    transform: scale(1.6) rotate(-6deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.94) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+@keyframes kiosk-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes kiosk-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.4) rotate(6deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(-4deg);
+  }
+}
+@keyframes kiosk-flash {
+  from {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes kiosk-nudge {
+  0%,
+  92%,
+  100% {
+    transform: rotate(-1deg);
+  }
+  95% {
+    transform: rotate(1.2deg) scale(1.015);
+  }
+}
+@keyframes kiosk-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
