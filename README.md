@@ -1,8 +1,9 @@
 # photobooth
 
 AI photobooth. A Raspberry Pi shoots, Convex stores and syncs, GMI restyles, and
-two screens — the booth kiosk and the guest's phone — both live off the same
-subscription.
+the screens — the booth surface and the guest's phone — all live off the same
+subscription. The look is POPFLASH: the design system (colour, type, the hard
+offset shadows) lives in `my-app/app/globals.css`.
 
 ## Run the frontend
 
@@ -13,8 +14,26 @@ cp .env.local.example .env.local
 npx next dev
 ```
 
-- **`/booth`** — the kiosk. Countdown, capture, QR handoff.
-- **`/s/<token>`** — the phone gallery, opened from the QR.
+- **`/kiosk`** — the iPad kiosk. One button, 4 shots with a 3-2-1 each, then a
+  QR handoff and reset for the next guest. `?shots=N` (1–8) changes the count.
+  Take payment out of band; there are no prices on screen.
+- **`/booth`** — the HDMI booth screen. QR only; the guest's phone is the shutter.
+- **`/s/<token>`** — the phone gallery, opened from either QR.
+
+`npm run nobooth` runs every surface against a simulated booth — no Convex, Pi,
+or camera needed.
+
+### Running the kiosk on an iPad
+
+Open `/kiosk` in Safari and **Add to Home Screen**, so it launches without
+browser chrome. Turn Auto-Lock off in Settings (the page requests a screen wake
+lock, but that is iPadOS 16.4+ and can be refused), and set Guided Access if the
+iPad will be unattended. The kiosk needs `NEXT_PUBLIC_BOOTH_PUBLIC_URL` set to
+an address the *guest's phone* can reach — the QR is useless otherwise.
+
+The kiosk runs its own 3-2-1 on screen and fires the capture request on the same
+tick, which lines up with the Pi's default `COUNTDOWN_MS=3000`. Leave that alone;
+setting it to 0 makes the kiosk shoot three seconds early.
 
 Use `npx next dev`, **not `npm run dev`** — the latter runs `convex dev`, which
 spins up a local deployment and overwrites the cloud URLs in your `.env.local`

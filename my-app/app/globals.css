@@ -5,19 +5,61 @@ html {
   scroll-behavior: smooth;
 }
 
-/* One light palette across every surface — the booth kiosk and the phone share
-   the same off-white base and near-black ink so the QR handoff feels like one
-   product, not two apps. */
+/* ---------------------------------------------------------------------------
+   POPFLASH — the design system every app surface shares.
+
+   Neobrutalist party: flat saturated colour, 4px black borders, hard offset
+   shadows instead of blur, Archivo Black for anything loud and Space Grotesk
+   for everything else. Nothing is soft, nothing is grey.
+
+   Raw values live here as --pop-* so both the Tailwind theme below and the
+   @utility primitives can read them; `@theme inline` inlines values into the
+   generated utilities, so it is not a reliable place to keep them.
+   --------------------------------------------------------------------------- */
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  --pop-yellow: #ffde03; /* base surface — the brand's "white" */
+  --pop-pink: #ff2d95; /* primary accent, and the shadow under hero buttons */
+  --pop-cyan: #7df9ff;
+  --pop-lime: #a8ff60; /* success / "it worked" */
+  --pop-violet: #b28dff;
+  --pop-ink: #000000; /* every border and every shadow */
+  --pop-paper: #ffffff; /* cards, and the QR quiet zone */
+
+  /* Offset shadows. Always hard (0 blur, 0 spread) and always ink, except the
+     pink one under the single loudest button on a screen. */
+  --pop-shadow-sm: 3px 3px 0 0 var(--pop-ink);
+  --pop-shadow: 4px 4px 0 0 var(--pop-ink);
+  --pop-shadow-md: 6px 6px 0 0 var(--pop-ink);
+  --pop-shadow-lg: 10px 10px 0 0 var(--pop-ink);
+  --pop-shadow-pink: 6px 6px 0 0 var(--pop-pink);
+
+  --background: var(--pop-yellow);
+  --foreground: var(--pop-ink);
   color-scheme: light;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-dm-sans);
+
+  --color-pop-yellow: var(--pop-yellow);
+  --color-pop-pink: var(--pop-pink);
+  --color-pop-cyan: var(--pop-cyan);
+  --color-pop-lime: var(--pop-lime);
+  --color-pop-violet: var(--pop-violet);
+  --color-pop-ink: var(--pop-ink);
+  --color-pop-paper: var(--pop-paper);
+
+  --shadow-pop-sm: var(--pop-shadow-sm);
+  --shadow-pop: var(--pop-shadow);
+  --shadow-pop-md: var(--pop-shadow-md);
+  --shadow-pop-lg: var(--pop-shadow-lg);
+  --shadow-pop-pink: var(--pop-shadow-pink);
+
+  /* Space Grotesk carries body copy; Archivo Black is display-only — it has one
+     weight and no lowercase personality, so it is used big and uppercase. */
+  --font-sans: var(--font-grotesk);
+  --font-display: var(--font-archivo);
 }
 
 body {
@@ -25,7 +67,63 @@ body {
   overflow-x: hidden;
   color: var(--foreground);
   background: var(--background);
-  font-family: var(--font-dm-sans), system-ui, Arial, sans-serif;
+  font-family: var(--font-grotesk), system-ui, Arial, sans-serif;
+}
+
+/* --- primitives -------------------------------------------------------------
+   Two utilities cover most of the system: a bordered card with an offset
+   shadow, and the press interaction where a control slides into its own shadow.
+   Everything else is plain Tailwind on the tokens above. */
+
+/* Card / panel: black keyline plus a hard shadow. Pair with a bg-* colour. */
+@utility pop-frame {
+  border: 4px solid var(--pop-ink);
+  box-shadow: var(--pop-shadow-md);
+}
+
+/* Press feedback for buttons: the control travels the length of its shadow and
+   the shadow disappears, so it reads as physically pushed down. Sized for the
+   6px shadow that pop-frame and the button classes use. */
+@utility pop-press {
+  transition:
+    transform 90ms ease-out,
+    box-shadow 90ms ease-out;
+
+  &:active {
+    transform: translate(6px, 6px);
+    box-shadow: 0 0 0 0 var(--pop-ink);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    &:active {
+      transform: none;
+    }
+  }
+}
+
+/* Outlined display type — white fill, black outline. Cheap stand-in for a
+   stroked font; used on hero headlines over colour. */
+@utility pop-outline {
+  color: var(--pop-paper);
+  text-shadow:
+    5px 5px 0 var(--pop-ink),
+    -2px -2px 0 var(--pop-ink),
+    2px -2px 0 var(--pop-ink),
+    -2px 2px 0 var(--pop-ink);
+}
+
+/* --- motion ---------------------------------------------------------------- */
+
+/* Scrolling ticker on the product page and the kiosk idle screen. */
+@keyframes pop-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 /* Welcome splash (components/phone/WelcomeSplash.tsx). `both` fill keeps the
@@ -38,5 +136,56 @@ body {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Each countdown digit re-mounts, so it slams in at full size and settles. */
+@keyframes pop-count {
+  0% {
+    opacity: 0;
+    transform: scale(1.6) rotate(-6deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.94) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* Shutter: a white frame flash over the whole screen. */
+@keyframes pop-flash {
+  from {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* A photo landing in the strip, or a "GOT IT" sticker appearing. */
+@keyframes pop-stamp {
+  0% {
+    opacity: 0;
+    transform: scale(1.35) rotate(8deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(-2deg);
+  }
+}
+
+/* Idle attention loop on the kiosk's start button. Deliberately small — it is a
+   nudge, not a dance. */
+@keyframes pop-nudge {
+  0%,
+  92%,
+  100% {
+    transform: rotate(-1deg);
+  }
+  95% {
+    transform: rotate(1.2deg) scale(1.015);
   }
 }

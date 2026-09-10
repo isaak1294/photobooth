@@ -1,16 +1,9 @@
 import type { Metadata } from "next";
-import { Archivo_Black, Space_Grotesk } from "next/font/google";
 import { BookingForm, type BookingTheme } from "@/components/product/BookingForm";
 
-const archivo = Archivo_Black({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-archivo",
-});
-const grotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-grotesk",
-});
+// The fonts and the marquee keyframes this page introduced now live in the
+// shared design system (app/layout.tsx, app/globals.css), because the app
+// surfaces are built on them too.
 
 export const metadata: Metadata = {
   title: "POPFLASH — Your party. But louder.",
@@ -76,14 +69,7 @@ const plans = [
 
 export default function Popflash() {
   return (
-    <main
-      className={`${archivo.variable} ${grotesk.variable} min-h-screen bg-[#ffde03] text-black overflow-x-hidden`}
-      style={{ fontFamily: "var(--font-grotesk)" }}
-    >
-      <style>{`
-        @keyframes pf-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-      `}</style>
-
+    <main className="min-h-screen bg-pop-yellow text-black overflow-x-hidden">
       {/* Nav */}
       <header className="border-b-4 border-black bg-[#ffde03] sticky top-0 z-20">
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
@@ -184,7 +170,7 @@ export default function Popflash() {
       <div className="border-y-4 border-black bg-black text-[#ffde03] py-3 overflow-hidden">
         <div
           className="flex whitespace-nowrap w-max"
-          style={{ animation: "pf-marquee 18s linear infinite" }}
+          style={{ animation: "pop-marquee 18s linear infinite" }}
         >
           {[0, 1].map((copy) => (
             <div key={copy} className="flex">

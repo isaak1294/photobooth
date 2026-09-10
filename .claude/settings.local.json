@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -f convex/auth.config.ts proxy.ts app/sign-in/route.ts app/sign-up/route.ts app/callback/route.ts app/server/page.tsx app/server/inner.tsx)",
+      "Bash(rmdir app/sign-in app/sign-up app/callback app/server)",
+      "Workflow(deep-research)",
+      "WebFetch(domain:docs.gmicloud.ai)",
+      "WebSearch",
+      "WebFetch(domain:www.imgezy.com)",
+      "WebFetch(domain:lumenfall.ai)",
+      "WebFetch(domain:ghost.oxen.ai)",
+      "WebFetch(domain:diffusiondoodles.substack.com)",
+      "WebFetch(domain:myaiforce.com)",
+      "WebFetch(domain:www.mimicpc.com)",
+      "WebFetch(domain:www.lmsys.org)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:www.gmicloud.ai)",
+      "Bash(curl -s https://docs.gmicloud.ai/llms.txt)",
+      "Bash(npx convex *)",
+      "Bash(curl -sL -o face.jpg \"https://thispersondoesnotexist.com/\")",
+      "Bash(curl -sL -o face.jpg \"https://randomuser.me/api/portraits/men/32.jpg\")",
+      "Bash(node /tmp/claude-1001/-home-isaak-projects-photobooth/0c1ec7c3-cdf1-4847-9d68-5f2a4deded03/scratchpad/verify.mjs)",
+      "Bash(npx eslint *)",
+      "Bash(npx next *)",
+      "Bash(python3 -c \"import PIL; print\\('PIL ok'\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3210 --max-time 3)",
+      "Bash(npx tsc *)",
+      "Bash(curl -s -o /dev/null -w \"3200 now: %{http_code}\\\\n\" --max-time 3 http://127.0.0.1:3200)",
+      "Bash(ps -o ppid= -p 571942)"
+    ]
+  }
+}

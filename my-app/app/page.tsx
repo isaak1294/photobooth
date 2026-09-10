@@ -2,20 +2,36 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Product page directions',
-  description: 'Four candidate product pages, one per design direction.',
+  title: 'POPFLASH — Index',
+  description: 'The app surfaces, plus the four candidate product pages.',
 };
 
-const directions = [
+// Dev index. The app itself lives at /kiosk, /booth and /s/<token>; the four
+// product pages below are the design explorations POPFLASH came out of.
+const surfaces = [
   {
-    href: '/mirra',
-    name: 'Mirra',
-    vibe: 'Editorial luxury — ivory, oversized serif, hairline rules',
+    href: '/kiosk',
+    name: 'Kiosk',
+    vibe: 'iPad on a stand — one button, four shots, QR handoff',
   },
+  {
+    href: '/booth',
+    name: 'Booth screen',
+    vibe: 'HDMI display — QR only, the phone does the rest',
+  },
+];
+
+const directions = [
   {
     href: '/popflash',
     name: 'POPFLASH',
     vibe: 'Neobrutalist party — hard shadows, stickers, marquee',
+    picked: true,
+  },
+  {
+    href: '/mirra',
+    name: 'Mirra',
+    vibe: 'Editorial luxury — ivory, oversized serif, hairline rules',
   },
   {
     href: '/shindig',
@@ -31,36 +47,48 @@ const directions = [
 
 export default function Home() {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-neutral-950 p-8 text-neutral-100">
-      <div className="w-full max-w-xl">
-        <p className="mb-6 text-xs uppercase tracking-[0.3em] text-neutral-500">
-          Product page explorations
-        </p>
-        <ul className="divide-y divide-neutral-800 border-y border-neutral-800">
-          {directions.map((d, i) => (
-            <li key={d.href}>
-              <Link
-                href={d.href}
-                className="group -mx-3 flex items-baseline gap-6 px-3 py-6 transition-colors hover:bg-neutral-900"
-              >
-                <span className="text-sm tabular-nums text-neutral-600">0{i + 1}</span>
-                <span className="text-2xl font-semibold transition-transform group-hover:translate-x-1">
-                  {d.name}
-                </span>
-                <span className="ml-auto max-w-64 text-right text-sm text-neutral-500">
-                  {d.vibe}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-8 text-sm text-neutral-600">
-          Looking for the app itself?{' '}
-          <Link href="/booth" className="text-neutral-400 underline underline-offset-4 hover:text-neutral-200">
-            Open the booth screen
-          </Link>
-        </p>
+    <main className="flex min-h-dvh items-center justify-center bg-pop-yellow p-6 sm:p-8">
+      <div className="w-full max-w-2xl">
+        <h1 className="mb-8 inline-block -rotate-2 font-display text-4xl uppercase sm:text-5xl">
+          POP<span className="text-pop-pink">FLASH</span>
+        </h1>
+
+        <Section title="The app" items={surfaces} />
+        <div className="h-8" />
+        <Section title="Product page directions" items={directions} />
       </div>
     </main>
+  );
+}
+
+function Section({
+  title,
+  items,
+}: {
+  title: string;
+  items: { href: string; name: string; vibe: string; picked?: boolean }[];
+}) {
+  return (
+    <section>
+      <h2 className="mb-3 text-xs font-bold tracking-[0.25em] uppercase">{title}</h2>
+      <ul className="flex flex-col gap-3">
+        {items.map((item) => (
+          <li key={item.href}>
+            <Link
+              href={item.href}
+              className="pop-press flex flex-col gap-1 border-4 border-pop-ink bg-pop-paper px-5 py-4 shadow-pop sm:flex-row sm:items-baseline sm:gap-4"
+            >
+              <span className="font-display text-xl uppercase">{item.name}</span>
+              {item.picked && (
+                <span className="w-fit border-2 border-pop-ink bg-pop-lime px-2 py-0.5 text-[10px] font-bold uppercase">
+                  Shipping
+                </span>
+              )}
+              <span className="text-sm font-bold sm:ml-auto sm:text-right">{item.vibe}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

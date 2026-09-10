@@ -50,20 +50,20 @@ export function StylePicker({
   return (
     <section className="flex flex-col gap-3" aria-labelledby="style-picker-title">
       <div>
-        <h2 id="style-picker-title" className="font-semibold">
+        <h2 id="style-picker-title" className="font-display text-lg uppercase">
           Pick a style
         </h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="mt-1 text-sm font-bold">
           Or upload any photo, like an invitation or a poster, and we&apos;ll turn it into one.
         </p>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-zinc-500" role="status">
+        <p className="text-sm font-bold uppercase" role="status">
           Loading styles…
         </p>
       ) : (
-        <div className="flex flex-wrap gap-2" aria-label="Styles">
+        <div className="flex flex-wrap gap-2 p-1" aria-label="Styles">
           {styles.map((style) => {
             const isSelected = style._id === selectedStyleId;
 
@@ -74,10 +74,8 @@ export function StylePicker({
                 onClick={() => onSelect(style._id)}
                 disabled={isDisabled}
                 aria-pressed={isSelected}
-                className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-40 ${
-                  isSelected
-                    ? 'border-zinc-900 bg-zinc-900 text-white'
-                    : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'
+                className={`border-2 border-pop-ink px-3.5 py-2 text-sm font-bold uppercase disabled:opacity-40 ${
+                  isSelected ? 'bg-pop-ink text-pop-yellow shadow-pop' : 'bg-pop-paper shadow-pop-sm'
                 }`}
               >
                 {style.name}
@@ -103,7 +101,7 @@ export function StylePicker({
             onClick={() => fileInput.current?.click()}
             disabled={isDisabled || themeBusy}
             aria-busy={themeBusy}
-            className="rounded-lg border border-dashed border-zinc-300 px-3.5 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-zinc-400 disabled:opacity-50"
+            className="border-2 border-dashed border-pop-ink bg-pop-violet px-3.5 py-2 text-sm font-bold uppercase disabled:opacity-50"
           >
             {themeJob?.status === 'uploading'
               ? 'Uploading…'
@@ -115,12 +113,12 @@ export function StylePicker({
       )}
 
       {themeJob !== null && themeJob.status !== 'failed' && (
-        <p className="animate-pulse text-sm text-zinc-500 motion-reduce:animate-none" role="status">
+        <p className="animate-pulse text-sm font-bold uppercase motion-reduce:animate-none" role="status">
           {themeJob.status === 'uploading' ? 'Sending your photo…' : 'Reading your photo and writing a theme (~10s)…'}
         </p>
       )}
       {themeJob?.status === 'failed' && (
-        <p className="text-sm text-red-600" role="alert">
+        <p className="border-2 border-pop-ink bg-pop-pink px-3 py-2 text-sm font-bold text-pop-paper" role="alert">
           {themeJob.error ?? "We couldn't make a theme from that photo."} Try a different one.
         </p>
       )}
@@ -130,13 +128,16 @@ export function StylePicker({
         onClick={onGenerate}
         disabled={isDisabled || selectedStyle === undefined}
         aria-busy={isGenerating}
-        className="min-h-12 rounded-lg bg-zinc-900 px-6 text-base font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 motion-reduce:transition-none"
+        className="pop-press min-h-14 border-4 border-pop-ink bg-pop-ink px-6 font-display text-lg text-pop-yellow uppercase shadow-pop-pink disabled:opacity-40"
       >
         {isGenerating ? 'Creating your photo…' : selectedStyle ? `Generate ${selectedStyle.name}` : 'Select a style'}
       </button>
 
       {error && (
-        <p className="text-center text-sm text-red-600" role="alert">
+        <p
+          className="border-2 border-pop-ink bg-pop-pink px-3 py-2 text-center text-sm font-bold text-pop-paper"
+          role="alert"
+        >
           {error}
         </p>
       )}

@@ -1,23 +1,31 @@
 import type { Metadata, Viewport } from 'next';
-import { DM_Sans } from 'next/font/google';
+import { Archivo_Black, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { ConvexClientProvider } from '@/components/ConvexClientProvider';
 
-const dmSans = DM_Sans({
-  variable: '--font-dm-sans',
+// The two POPFLASH faces, loaded once for every surface. globals.css maps them
+// onto --font-display / --font-sans, so components ask for `font-display`
+// rather than naming the font.
+const archivo = Archivo_Black({
+  weight: '400',
   subsets: ['latin'],
+  variable: '--font-archivo',
+});
+const grotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-grotesk',
 });
 
 export const metadata: Metadata = {
-  title: 'Amber Photobooths',
-  description: 'Control the booth camera and create styled photos from your phone.',
+  title: 'POPFLASH',
+  description: 'Your party. But louder. Photobooth that shows up and goes off.',
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#fafafa',
+  themeColor: '#ffde03',
 };
 
 export default function RootLayout({
@@ -27,7 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${dmSans.variable} antialiased`}>
+      <body className={`${archivo.variable} ${grotesk.variable} antialiased`}>
         <ConvexClientProvider>{children}</ConvexClientProvider>
       </body>
     </html>

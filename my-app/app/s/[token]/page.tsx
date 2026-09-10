@@ -3,7 +3,7 @@
 import { useParams } from 'next/navigation';
 import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AmberGlow } from '@/components/AmberGlow';
+import { PopBackdrop } from '@/components/PopBackdrop';
 import { CapturePanel, type CapturePhase } from '@/components/phone/CapturePanel';
 import { GenerationBanner, type BannerState } from '@/components/phone/GenerationBanner';
 import { MockPhone } from '@/components/phone/MockPhone';
@@ -401,18 +401,20 @@ function LivePhone() {
       {splashEl}
       <GenerationBanner state={bannerState} onTap={onBannerTap} />
 
-      <AmberGlow sizeVh={90} />
+      <PopBackdrop />
 
       <header className="flex items-center justify-between pt-[max(1.25rem,env(safe-area-inset-top))]">
-        <h1 className="text-lg font-semibold tracking-tight">Amber Photobooths</h1>
-        <span className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 font-mono text-xs text-zinc-500">
+        <h1 className="inline-block -rotate-2 font-display text-xl uppercase">
+          POP<span className="text-pop-pink">FLASH</span>
+        </h1>
+        <span className="border-2 border-pop-ink bg-pop-paper px-2.5 py-1 font-mono text-xs font-bold shadow-pop-sm">
           {session.shortCode}
         </span>
       </header>
 
       {isReconnecting && (
         <p
-          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-800"
+          className="border-2 border-pop-ink bg-pop-violet px-4 py-2 text-center text-sm font-bold uppercase"
           role="status"
         >
           Reconnecting…
@@ -441,8 +443,8 @@ function LivePhone() {
         />
 
         {failedRenderForSelected && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3" role="alert">
-            <p className="text-sm text-red-700">
+          <div className="border-4 border-pop-ink bg-pop-pink px-4 py-3 shadow-pop" role="alert">
+            <p className="text-sm font-bold text-pop-paper">
               The {styleNameOf(failedRenderForSelected.styleId)} edit didn&apos;t finish.
             </p>
             <button
@@ -452,7 +454,7 @@ function LivePhone() {
                 void submitRender(failedRenderForSelected.styleId);
               }}
               disabled={isGenerating || isReconnecting}
-              className="mt-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-40"
+              className="pop-press mt-2 border-2 border-pop-ink bg-pop-ink px-4 py-2 font-display text-sm text-pop-yellow uppercase disabled:opacity-40"
             >
               Try again
             </button>
@@ -484,7 +486,9 @@ function LivePhone() {
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-dvh items-center justify-center px-8 text-center text-zinc-500">{children}</div>;
+  return (
+    <div className="flex min-h-dvh items-center justify-center px-8 text-center font-bold uppercase">{children}</div>
+  );
 }
 
 // Downscale an image on the client before upload. Falls back to the original

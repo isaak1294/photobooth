@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { AmberGlow } from '../AmberGlow';
+import { makeMockPhoto } from '@/lib/mockPhoto';
+import { PopBackdrop } from '../PopBackdrop';
 import { CapturePanel, type CapturePhase } from './CapturePanel';
 import { GenerationBanner, type BannerState } from './GenerationBanner';
 import { PhotoGallery, type PhotoVariant } from './PhotoGallery';
@@ -32,29 +33,6 @@ const STYLE_FILTERS: Record<string, string> = {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function makePhoto(seed: number): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = 800;
-  canvas.height = 600;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return '';
-  const hue = (seed * 47) % 360;
-  const gradient = ctx.createLinearGradient(0, 0, 800, 600);
-  gradient.addColorStop(0, `hsl(${hue} 45% 70%)`);
-  gradient.addColorStop(1, `hsl(${(hue + 60) % 360} 45% 45%)`);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 800, 600);
-  ctx.fillStyle = `hsl(${(hue + 180) % 360} 55% 82%)`;
-  ctx.beginPath();
-  ctx.arc(400, 280, 140, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-  ctx.font = '28px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(`Demo capture ${seed}`, 400, 560);
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
 
 async function stylize(url: string, filter: string, label: string): Promise<string> {
   const img = new Image();
@@ -131,7 +109,7 @@ export function MockPhone() {
       await sleep(600);
       if (!alive.current) return;
       const id = `photo-${++seq.current}`;
-      setPhotos((prev) => [...prev, { id, url: makePhoto(seq.current), renders: [] }]);
+      setPhotos((prev) => [...prev, { id, url: makeMockPhoto(seq.current), renders: [] }]);
       setSelectedPhotoId(id);
       setVariantKey('original');
       setPhase({ kind: 'saved' });
@@ -206,14 +184,18 @@ export function MockPhone() {
       {splash !== 'gone' && <WelcomeSplash stage={splash === 'leaving' ? 'leaving' : 'showing'} />}
       <GenerationBanner state={banner} onTap={onBannerTap} />
 
-      <AmberGlow sizeVh={90} />
+      <PopBackdrop />
 
       <header className="flex items-center justify-between pt-[max(1.25rem,env(safe-area-inset-top))]">
-        <h1 className="text-lg font-semibold tracking-tight">Amber Photobooths</h1>
-        <span className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 font-mono text-xs text-zinc-500">DEMO</span>
+        <h1 className="inline-block -rotate-2 font-display text-xl uppercase">
+          POP<span className="text-pop-pink">FLASH</span>
+        </h1>
+        <span className="border-2 border-pop-ink bg-pop-violet px-2.5 py-1 font-mono text-xs font-bold shadow-pop-sm">
+          DEMO
+        </span>
       </header>
 
-      <p className="text-xs text-zinc-400">Demo mode. Captures and styles are simulated, no camera connected.</p>
+      <p className="text-xs font-bold uppercase">Demo mode. Captures and styles are simulated, no camera connected.</p>
 
       <div className="flex flex-col gap-5">
         <CapturePanel

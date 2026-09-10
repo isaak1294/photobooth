@@ -27,17 +27,10 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
   const busy = phase.kind !== 'idle' && phase.kind !== 'failed';
 
   return (
-    <section
-      className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-      aria-label="Booth camera"
-    >
+    <section className="pop-frame bg-pop-paper p-4" aria-label="Booth camera">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-medium text-zinc-500">Booth camera</p>
-        <div
-          className="flex rounded-lg bg-zinc-100 p-1"
-          role="radiogroup"
-          aria-label="Photos per press"
-        >
+        <p className="font-display text-sm uppercase">Booth camera</p>
+        <div className="flex gap-1.5" role="radiogroup" aria-label="Photos per press">
           {SHOT_CHOICES.map((n) => (
             <button
               key={n}
@@ -46,8 +39,8 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
               aria-checked={shots === n}
               onClick={() => onShotsChange(n)}
               disabled={busy}
-              className={`min-w-10 rounded-md px-3 py-1 text-sm font-medium transition-colors disabled:opacity-40 ${
-                shots === n ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'
+              className={`min-w-10 border-2 border-pop-ink px-3 py-1 text-sm font-bold disabled:opacity-40 ${
+                shots === n ? 'bg-pop-ink text-pop-yellow shadow-pop-sm' : 'bg-pop-paper'
               }`}
             >
               {n}×
@@ -56,12 +49,14 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
         </div>
       </div>
 
-      {busy ? <StatusSlot phase={phase} /> : (
+      {busy ? (
+        <StatusSlot phase={phase} />
+      ) : (
         <button
           type="button"
           onClick={onCapture}
           disabled={disabled}
-          className="flex min-h-12 w-full items-center justify-center rounded-lg bg-zinc-900 px-6 text-base font-medium text-white transition-colors hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900 disabled:opacity-40 motion-reduce:transition-none"
+          className="pop-press flex min-h-14 w-full items-center justify-center border-4 border-pop-ink bg-pop-ink px-6 font-display text-lg text-pop-yellow uppercase shadow-pop-pink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-pop-ink disabled:opacity-40"
         >
           {shots === 1 ? 'Take photo' : `Take ${shots} photos`}
         </button>
@@ -69,12 +64,12 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
 
       <div aria-live="polite" aria-atomic="true">
         {burst && (
-          <p className="mt-3 text-center text-sm text-zinc-500">
+          <p className="mt-3 text-center text-sm font-bold uppercase">
             Photo {burst.index} of {burst.total}
           </p>
         )}
         {phase.kind === 'failed' && (
-          <p className="mt-3 text-center text-sm text-red-600" role="alert">
+          <p className="mt-3 border-2 border-pop-ink bg-pop-pink px-3 py-2 text-center text-sm font-bold text-pop-paper" role="alert">
             {phase.error ?? "That photo didn't work."} Tap the button to try again.
           </p>
         )}
@@ -86,7 +81,7 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
 function StatusSlot({ phase }: { phase: CapturePhase }) {
   return (
     <div
-      className="flex min-h-12 w-full items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 px-6"
+      className="flex min-h-14 w-full items-center justify-center border-4 border-dashed border-pop-ink bg-pop-yellow px-6"
       role="status"
       aria-live="polite"
       aria-atomic="true"
@@ -94,23 +89,27 @@ function StatusSlot({ phase }: { phase: CapturePhase }) {
       {phase.kind === 'starting' && <Pulse>Connecting to booth…</Pulse>}
       {phase.kind === 'counting_down' && (
         <span className="flex items-baseline gap-3">
-          <span className="text-sm font-medium text-zinc-500">Look at the booth</span>
-          {/* Key on the digit so each tick re-mounts and re-plays the pop-in. */}
+          <span className="text-sm font-bold uppercase">Look at the booth</span>
+          {/* Key on the digit so each tick re-mounts and re-plays the slam. */}
           <span
             key={phase.secondsLeft ?? 'go'}
-            className="animate-[ping_0.15s_ease-out_1] text-3xl leading-none font-semibold text-zinc-900 motion-reduce:animate-none"
+            className="font-display text-3xl leading-none motion-safe:animate-[pop-count_0.35s_ease-out]"
           >
             {phase.secondsLeft === null || phase.secondsLeft <= 0 ? '…' : phase.secondsLeft}
           </span>
         </span>
       )}
-      {phase.kind === 'capturing' && <span className="text-xl font-semibold tracking-tight">Smile!</span>}
+      {phase.kind === 'capturing' && <span className="font-display text-xl uppercase">Smile!</span>}
       {phase.kind === 'uploading' && <Pulse>Sending your photo…</Pulse>}
-      {phase.kind === 'saved' && <span className="text-base font-semibold text-emerald-600">Saved ✓</span>}
+      {phase.kind === 'saved' && (
+        <span className="-rotate-2 border-2 border-pop-ink bg-pop-lime px-3 py-1 font-display text-base uppercase motion-safe:animate-[pop-stamp_0.3s_ease-out]">
+          Got it!
+        </span>
+      )}
     </div>
   );
 }
 
 function Pulse({ children }: { children: React.ReactNode }) {
-  return <span className="animate-pulse font-medium text-zinc-500 motion-reduce:animate-none">{children}</span>;
+  return <span className="animate-pulse text-sm font-bold uppercase motion-reduce:animate-none">{children}</span>;
 }

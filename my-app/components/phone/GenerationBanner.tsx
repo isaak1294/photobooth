@@ -19,17 +19,17 @@ export function GenerationBanner({ state, onTap }: GenerationBannerProps) {
 
   const tone =
     state.kind === 'working'
-      ? 'bg-zinc-900 text-white'
+      ? 'bg-pop-ink text-pop-yellow'
       : state.kind === 'ready'
-        ? 'bg-emerald-600 text-white'
-        : 'bg-red-600 text-white';
+        ? 'bg-pop-lime text-pop-ink'
+        : 'bg-pop-pink text-pop-paper';
 
   return (
     <div className="sticky top-0 z-30 -mx-5" role="status" aria-live="polite">
       <button
         type="button"
         onClick={onTap}
-        className={`flex w-full items-center justify-center gap-2 px-5 py-2 text-xs font-medium ${tone}`}
+        className={`flex w-full items-center justify-center gap-2 border-b-4 border-pop-ink px-5 py-2.5 text-xs font-bold uppercase ${tone}`}
       >
         <span className={state.kind === 'working' ? 'animate-pulse motion-reduce:animate-none' : ''}>
           {state.label}
