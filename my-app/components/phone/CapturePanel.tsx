@@ -21,7 +21,11 @@ type CapturePanelProps = {
   onCapture: () => void;
 };
 
-const SHOT_CHOICES = [1, 2, 3];
+// 4 is the strip: photobooth_print.py lays exactly four cells into a 50x148mm
+// strip, twice per sheet, with one centre cut. Any other count is a plain
+// capture run and the Pi never drops a print job for it.
+export const STRIP_SHOTS = 4;
+const SHOT_CHOICES = [1, 2, 3, STRIP_SHOTS];
 
 export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onCapture }: CapturePanelProps) {
   const busy = phase.kind !== 'idle' && phase.kind !== 'failed';
@@ -62,6 +66,10 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
         </button>
       )}
 
+      {shots === STRIP_SHOTS && !busy && (
+        <p className="mt-2 text-center text-xs font-bold uppercase opacity-70">Prints a strip — two copies, one cut</p>
+      )}
+
       <div aria-live="polite" aria-atomic="true">
         {burst && (
           <p className="mt-3 text-center text-sm font-bold uppercase">
@@ -69,7 +77,10 @@ export function CapturePanel({ phase, shots, onShotsChange, burst, disabled, onC
           </p>
         )}
         {phase.kind === 'failed' && (
-          <p className="mt-3 border-2 border-pop-ink bg-pop-pink px-3 py-2 text-center text-sm font-bold text-pop-paper" role="alert">
+          <p
+            className="mt-3 border-2 border-pop-ink bg-pop-pink px-3 py-2 text-center text-sm font-bold text-pop-paper"
+            role="alert"
+          >
             {phase.error ?? "That photo didn't work."} Tap the button to try again.
           </p>
         )}

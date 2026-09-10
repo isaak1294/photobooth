@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { mutation, query, internalMutation } from './_generated/server';
 import { captureStatus } from './captureStatus';
+import { printStatus } from './printStatus';
 
 // Create a new booth run. The `token` is a random string carried in the QR link
 // — never a sequential id, so a stale QR from a test run can't surface someone
@@ -51,6 +52,22 @@ export const getSession = query({
           _id: v.id('photos'),
           _creationTime: v.number(),
           url: v.union(v.string(), v.null()),
+          burstId: v.union(v.string(), v.null()),
+          seq: v.union(v.number(), v.null()),
+        }),
+      ),
+      // The most recent sheet the Pi has told us about, so the phone can show
+      // "printing…" / "come get your strips" / "the printer needs paper".
+      // Absent until the agent's first status POST for that burst lands.
+      print: v.union(
+        v.null(),
+        v.object({
+          burstId: v.string(),
+          status: printStatus,
+          detail: v.union(v.string(), v.null()),
+          error: v.union(v.string(), v.null()),
+          sheets: v.number(),
+          updatedAt: v.number(),
         }),
       ),
       renders: v.array(
@@ -59,12 +76,7 @@ export const getSession = query({
           _creationTime: v.number(),
           photoId: v.id('photos'),
           styleId: v.id('styles'),
-          status: v.union(
-            v.literal('queued'),
-            v.literal('processing'),
-            v.literal('done'),
-            v.literal('failed'),
-          ),
+          status: v.union(v.literal('queued'), v.literal('processing'), v.literal('done'), v.literal('failed')),
           error: v.union(v.string(), v.null()),
           outputUrl: v.union(v.string(), v.null()),
         }),
@@ -102,11 +114,23 @@ export const getSession = query({
       .withIndex('by_session', (q) => q.eq('sessionId', session._id))
       .collect();
 
+    // Within one burst, order by `seq` — the Pi uploads a burst's frames
+    // concurrently, so creation order is upload-completion order, which is not
+    // the order the shutter fired. Across bursts, fall back to creation time.
+    const orderedPhotoDocs = photoDocs.slice().sort((a, b) => {
+      if (a.burstId !== undefined && a.burstId === b.burstId) {
+        return (a.seq ?? 0) - (b.seq ?? 0);
+      }
+      return a._creationTime - b._creationTime;
+    });
+
     const photos = await Promise.all(
-      photoDocs.map(async (p) => ({
+      orderedPhotoDocs.map(async (p) => ({
         _id: p._id,
         _creationTime: p._creationTime,
         url: await ctx.storage.getUrl(p.storageId),
+        burstId: p.burstId ?? null,
+        seq: p.seq ?? null,
       })),
     );
     const renders = await Promise.all(
@@ -121,7 +145,23 @@ export const getSession = query({
       })),
     );
 
-    return { sessionId: session._id, shortCode: session.shortCode, capture, photos, renders };
+    const latestPrint = await ctx.db
+      .query('printJobs')
+      .withIndex('by_session', (q) => q.eq('sessionId', session._id))
+      .order('desc')
+      .first();
+    const print = latestPrint
+      ? {
+          burstId: latestPrint.burstId,
+          status: latestPrint.status,
+          detail: latestPrint.detail ?? null,
+          error: latestPrint.error ?? null,
+          sheets: latestPrint.sheets,
+          updatedAt: latestPrint.updatedAt,
+        }
+      : null;
+
+    return { sessionId: session._id, shortCode: session.shortCode, capture, photos, renders, print };
   },
 });
 
@@ -130,7 +170,12 @@ export const getSession = query({
 // don't want this callable from the client. Looks the session up by token so the
 // booth only ever passes the token it already has.
 export const addPhoto = internalMutation({
-  args: { token: v.string(), storageId: v.id('_storage') },
+  args: {
+    token: v.string(),
+    storageId: v.id('_storage'),
+    burstId: v.optional(v.string()),
+    seq: v.optional(v.number()),
+  },
   returns: v.union(v.id('photos'), v.null()),
   handler: async (ctx, args) => {
     const session = await ctx.db
@@ -138,6 +183,11 @@ export const addPhoto = internalMutation({
       .withIndex('by_token', (q) => q.eq('token', args.token))
       .unique();
     if (session === null) return null;
-    return await ctx.db.insert('photos', { sessionId: session._id, storageId: args.storageId });
+    return await ctx.db.insert('photos', {
+      sessionId: session._id,
+      storageId: args.storageId,
+      ...(args.burstId !== undefined ? { burstId: args.burstId } : {}),
+      ...(args.seq !== undefined ? { seq: args.seq } : {}),
+    });
   },
 });

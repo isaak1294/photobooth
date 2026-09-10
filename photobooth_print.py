@@ -103,7 +103,10 @@ class StripLayout:
     photos: int = 4
     outer_margin_mm: float = 2.5
     gutter_mm: float = 2.0
-    footer_mm: float = 18.0
+    # 18mm left most of the footer band as dead white: _fit_text shrinks the
+    # caption until it fits the 530px cell width, which lands around 30px tall.
+    # 10mm still clears the text and gives each of the four cells ~23px back.
+    footer_mm: float = 10.0
     footer_text: str = "THE BOOTH  ·  2026"
     background: tuple[int, int, int] = (255, 255, 255)
     footer_colour: tuple[int, int, int] = (25, 25, 25)
@@ -337,9 +340,21 @@ class PrintService:
 class PrintTask:
     photo_paths: list[Path]
     session_id: str
+    # The burst these frames came from. One press of "Take 4 photos" is one
+    # burst is one sheet.
+    burst_id: str = ""
+    # Carried so the status callback can report to Convex without a lookup.
+    token: str = ""
     strip_layout: StripLayout = field(default_factory=StripLayout)
     sheet_layout: SheetLayout = field(default_factory=SheetLayout)
     attempts: int = 0
+
+    @property
+    def job_key(self) -> str:
+        """Spool filename stem. Keyed on the BURST, not the session: a guest who
+        takes a second round of photos would otherwise overwrite the first
+        sheet's PDF while it was still being printed."""
+        return self.burst_id or self.session_id
 
 
 class PrintWorker(threading.Thread):
@@ -355,13 +370,19 @@ class PrintWorker(threading.Thread):
         self,
         service: PrintService,
         spool_dir: Path = Path("/var/tmp/booth"),
-        on_status: Callable[[str, str, str], None] | None = None,
-        max_pending: int = 20,
+        on_status: Callable[[PrintTask, str, str], None] | None = None,
+        # ~41s per sheet, so this is the queue's depth in MINUTES: 8 sheets is
+        # about 5 minutes of backlog. The old default of 20 was nearly 14
+        # minutes — a guest queued that deep has left the venue, and the sheet
+        # prints to nobody. Reject beyond this instead: the phone gallery is the
+        # primary deliverable, so "your photos are on your phone" is a fine
+        # answer and the printer stays inside a human attention span.
+        max_pending: int = 8,
     ):
         super().__init__(daemon=True, name="print-worker")
         self.service = service
         self.spool_dir = spool_dir
-        self.on_status = on_status or (lambda sid, state, detail: None)
+        self.on_status = on_status or (lambda task, state, detail: None)
         self.q: queue.Queue[PrintTask | None] = queue.Queue(maxsize=max_pending)
         self._sheet_px: tuple[int, int] | None = None
         self._stop = threading.Event()
@@ -377,10 +398,10 @@ class PrintWorker(threading.Thread):
         a 'printer is catching up' message instead of silently dropping."""
         try:
             self.q.put_nowait(task)
-            self.on_status(task.session_id, "queued", f"{self.q.qsize()} ahead")
+            self.on_status(task, "queued", f"{self.q.qsize()} ahead")
             return True
         except queue.Full:
-            self.on_status(task.session_id, "rejected", "print queue full")
+            self.on_status(task, "rejected", "print queue full")
             return False
 
     def stop(self) -> None:
@@ -400,57 +421,71 @@ class PrintWorker(threading.Thread):
                 self.q.task_done()
 
     def _handle(self, task: PrintTask) -> None:
-        sid = task.session_id
-
-        self.on_status(sid, "composing", "")
+        self.on_status(task, "composing", "")
         photos = [Image.open(p) for p in task.photo_paths]
         sheet = build_sheet(photos, self.sheet_px, task.strip_layout, task.sheet_layout)
-        pdf = sheet_to_pdf(sheet, self.spool_dir / f"{sid}.pdf")
+        pdf = sheet_to_pdf(sheet, self.spool_dir / f"{task.job_key}.pdf")
         # Keep a flat preview for the kiosk screen / phone gallery.
-        sheet.save(self.spool_dir / f"{sid}.jpg", quality=92)
+        sheet.save(self.spool_dir / f"{task.job_key}.jpg", quality=92)
 
+        # Outer loop: a consumable fault parks the task until a human reloads,
+        # then the attempt budget starts over. This used to be recursion —
+        # _park() called _handle() — which added a stack frame per ribbon change
+        # and would grow without bound over a long event.
+        while not self._stop.is_set():
+            outcome = self._print_with_retries(task, pdf)
+            if outcome != "parked":
+                return
+            if not self._await_operator(task):
+                return
+            task.attempts = 0
+
+    def _print_with_retries(self, task: PrintTask, pdf: Path) -> str:
+        """One budget of attempts. Returns 'printed', 'failed', or 'parked'
+        (consumables are out and only a human can clear it)."""
         while task.attempts < self.MAX_ATTEMPTS and not self._stop.is_set():
             task.attempts += 1
             ok, detail = self.service.preflight()
             if not ok:
-                self.on_status(sid, "blocked", detail)
+                self.on_status(task, "blocked", detail)
                 if self.service.needs_operator():
                     # Paper or ribbon: park the task, do not burn retries.
-                    self._park(task)
-                    return
+                    return "parked"
                 self.service.resume()
                 time.sleep(3)
                 continue
 
             try:
-                job_id = self.service.submit(pdf, title=f"booth-{sid}")
-                self.on_status(sid, "printing", f"job {job_id}")
+                job_id = self.service.submit(pdf, title=f"booth-{task.job_key}")
+                self.on_status(task, "printing", f"job {job_id}")
                 self.service.wait(job_id)
-                self.on_status(sid, "printed", "")
-                return
+                self.on_status(task, "printed", "")
+                return "printed"
             except PrinterBusy as exc:
                 log.warning("attempt %s/%s failed: %s", task.attempts, self.MAX_ATTEMPTS, exc)
-                self.on_status(sid, "retrying", str(exc))
+                self.on_status(task, "retrying", str(exc))
                 if self.service.needs_operator():
-                    self._park(task)
-                    return
+                    return "parked"
                 self.service.resume()
                 time.sleep(2 * task.attempts)  # linear backoff
 
-        self.on_status(sid, "failed", "gave up after retries")
+        if self._stop.is_set():
+            return "failed"
+        self.on_status(task, "failed", "gave up after retries")
+        return "failed"
 
-    def _park(self, task: PrintTask) -> None:
-        """Consumables exhausted: hold the task, alert the operator, and put
-        it back at the front of the queue once someone reloads."""
-        self.on_status(task.session_id, "waiting-operator", "; ".join(self.service.printer_reasons()))
+    def _await_operator(self, task: PrintTask) -> bool:
+        """Block until someone reloads paper or ribbon. Returns False if the
+        worker is shutting down instead. The whole queue stalls here on purpose —
+        there is one printer, so nothing behind this task could print anyway."""
+        self.on_status(task, "waiting-operator", "; ".join(self.service.printer_reasons()))
         while not self._stop.is_set():
             time.sleep(5)
             if not self.service.needs_operator():
                 self.service.resume()
-                task.attempts = 0
-                self.on_status(task.session_id, "queued", "resumed after reload")
-                self._handle(task)
-                return
+                self.on_status(task, "queued", "resumed after reload")
+                return True
+        return False
 
 
 # --------------------------------------------------------------------------

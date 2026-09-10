@@ -7,9 +7,18 @@ import { captureStatus, ACTIVE_CAPTURE_STATUSES } from './captureStatus';
 // two phones on the same session) can't queue overlapping shots. The whole
 // handler is one Convex transaction, so the read-then-insert is atomic.
 export const requestCapture = mutation({
-  args: { token: v.string() },
+  args: {
+    token: v.string(),
+    // Multi-shot run metadata, minted on the phone at press time. The phone
+    // fires shots one at a time, so it is the only participant that knows the
+    // set exists — the Pi needs `seq`/`framesTotal` to recognise the final frame
+    // and kick off the local print.
+    burstId: v.optional(v.string()),
+    seq: v.optional(v.number()),
+    framesTotal: v.optional(v.number()),
+  },
   returns: v.id('captureRequests'),
-  handler: async (ctx, { token }) => {
+  handler: async (ctx, { token, burstId, seq, framesTotal }) => {
     const session = await ctx.db
       .query('sessions')
       .withIndex('by_token', (q) => q.eq('token', token))
@@ -28,6 +37,9 @@ export const requestCapture = mutation({
       sessionId: session._id,
       status: 'pending',
       updatedAt: Date.now(),
+      ...(burstId !== undefined ? { burstId } : {}),
+      ...(seq !== undefined ? { seq } : {}),
+      ...(framesTotal !== undefined ? { framesTotal } : {}),
     });
   },
 });
@@ -47,7 +59,21 @@ function assertBooth(secret: string) {
 // `pending` (to counting_down) it drops out of here — that's the claim.
 export const pendingCaptures = query({
   args: { secret: v.string() },
-  returns: v.array(v.object({ requestId: v.id('captureRequests'), token: v.string() })),
+  returns: v.array(
+    v.object({
+      requestId: v.id('captureRequests'),
+      token: v.string(),
+      // The Pi files frames on local disk under the session, and needs a stable
+      // directory name that isn't the secret-bearing token.
+      sessionId: v.id('sessions'),
+      // Burst metadata, passed straight through. When `seq === framesTotal - 1`
+      // and framesTotal is a full strip, the Pi drops a print job on local disk
+      // as soon as that frame is written — before it uploads anything.
+      burstId: v.union(v.string(), v.null()),
+      seq: v.union(v.number(), v.null()),
+      framesTotal: v.union(v.number(), v.null()),
+    }),
+  ),
   handler: async (ctx, { secret }) => {
     assertBooth(secret);
     const pending = await ctx.db
@@ -57,7 +83,16 @@ export const pendingCaptures = query({
     const out = [];
     for (const r of pending) {
       const session = await ctx.db.get('sessions', r.sessionId);
-      if (session) out.push({ requestId: r._id, token: session.token });
+      if (session) {
+        out.push({
+          requestId: r._id,
+          token: session.token,
+          sessionId: session._id,
+          burstId: r.burstId ?? null,
+          seq: r.seq ?? null,
+          framesTotal: r.framesTotal ?? null,
+        });
+      }
     }
     return out;
   },
@@ -82,12 +117,7 @@ export const updateCaptureStatus = mutation({
     // Store a bounded error string so a caller can't stuff the doc with a huge
     // payload; default a generic message on failure so the phone never shows a
     // blank error.
-    const safeError =
-      error !== undefined
-        ? error.slice(0, 300)
-        : status === 'failed'
-          ? 'Capture failed'
-          : undefined;
+    const safeError = error !== undefined ? error.slice(0, 300) : status === 'failed' ? 'Capture failed' : undefined;
 
     await ctx.db.patch('captureRequests', requestId, {
       status,

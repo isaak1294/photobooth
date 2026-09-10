@@ -4,7 +4,8 @@ import { useParams } from 'next/navigation';
 import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PopBackdrop } from '@/components/PopBackdrop';
-import { CapturePanel, type CapturePhase } from '@/components/phone/CapturePanel';
+import { CapturePanel, STRIP_SHOTS, type CapturePhase } from '@/components/phone/CapturePanel';
+import { PrintTicket } from '@/components/phone/PrintTicket';
 import { GenerationBanner, type BannerState } from '@/components/phone/GenerationBanner';
 import { MockPhone } from '@/components/phone/MockPhone';
 import { PhotoGallery, type PhotoVariant } from '@/components/phone/PhotoGallery';
@@ -76,9 +77,15 @@ function LivePhone() {
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<{ requestId: string; left: number } | null>(null);
-  const [shots, setShots] = useState(1);
+  // Default to a full strip: four cells is what the printer lays out, so this is
+  // the setting that actually produces paper.
+  const [shots, setShots] = useState(STRIP_SHOTS);
   const [burstInfo, setBurstInfo] = useState<{ index: number; total: number } | null>(null);
-  const burstRef = useRef({ remaining: 0, total: 1 });
+  // `id` groups the run for the Pi. Shots fire ONE AT A TIME, so the Pi can only
+  // tell it has the last frame — and can only start the print — by comparing
+  // seq against framesTotal. Minted here because the phone is the only
+  // participant that knows the set exists.
+  const burstRef = useRef({ id: '', remaining: 0, total: 1 });
   // A failed capture from BEFORE this page opened is history, not news; the
   // capture's server-side updatedAt is compared against this to tell them apart.
   const [loadedAt] = useState(() => Date.now());
@@ -105,17 +112,25 @@ function LivePhone() {
 
   const capture = session?.capture ?? null;
 
-  const fireCapture = useCallback(async () => {
-    try {
-      await requestCapture({ token });
-    } catch (error) {
-      console.error('Capture request failed', error);
-      burstRef.current.remaining = 0;
-      setBurstInfo(null);
-      setPressState(null);
-      setRequestError("We couldn't reach the booth.");
-    }
-  }, [requestCapture, token]);
+  const fireCapture = useCallback(
+    async (seq: number) => {
+      try {
+        await requestCapture({
+          token,
+          burstId: burstRef.current.id,
+          seq,
+          framesTotal: burstRef.current.total,
+        });
+      } catch (error) {
+        console.error('Capture request failed', error);
+        burstRef.current.remaining = 0;
+        setBurstInfo(null);
+        setPressState(null);
+        setRequestError("We couldn't reach the booth.");
+      }
+    },
+    [requestCapture, token],
+  );
 
   // Local 3-2-1 ticker while the Pi reports counting_down.
   const countingRequestId = capture?.status === 'counting_down' ? capture.requestId : null;
@@ -150,7 +165,9 @@ function LivePhone() {
         });
         // Keep deriving "starting" until the next request row shows up.
         setPressState({ sinceRequestId: capture.requestId });
-        void fireCapture();
+        // seq counts up as `remaining` counts down, so the final shot of the run
+        // carries seq === total - 1. That's the Pi's cue to compose and print.
+        void fireCapture(burstRef.current.total - burstRef.current.remaining - 1);
       } else {
         setBurstInfo(null);
         setPressState(null);
@@ -281,8 +298,7 @@ function LivePhone() {
   const isGenerating = isRenderSubmitting || renderRequestAwaitingSubscription || activeRenders.length > 0;
 
   const latestRenderForSelected = rendersForSelectedPhoto[rendersForSelectedPhoto.length - 1] ?? null;
-  const failedRenderForSelected =
-    latestRenderForSelected?.status === 'failed' ? latestRenderForSelected : null;
+  const failedRenderForSelected = latestRenderForSelected?.status === 'failed' ? latestRenderForSelected : null;
 
   // --- generation banner ---------------------------------------------------------
   const bannerState: BannerState =
@@ -297,7 +313,10 @@ function LivePhone() {
       : !bannerDismissed && lastRequestedRender?.status === 'done'
         ? { kind: 'ready', label: `Your ${styleNameOf(lastRequestedRender.styleId)} photo is ready. Tap to view` }
         : !bannerDismissed && lastRequestedRender?.status === 'failed'
-          ? { kind: 'failed', label: `The ${styleNameOf(lastRequestedRender.styleId)} edit didn't finish. Tap to retry` }
+          ? {
+              kind: 'failed',
+              label: `The ${styleNameOf(lastRequestedRender.styleId)} edit didn't finish. Tap to retry`,
+            }
           : null;
 
   function selectPhoto(photoId: string) {
@@ -340,10 +359,10 @@ function LivePhone() {
   function onCapture() {
     if (captureBusy || isReconnecting) return;
     setRequestError(null);
-    burstRef.current = { remaining: shots - 1, total: shots };
+    burstRef.current = { id: crypto.randomUUID(), remaining: shots - 1, total: shots };
     setBurstInfo(shots > 1 ? { index: 1, total: shots } : null);
     setPressState({ sinceRequestId: capture?.requestId ?? null });
-    void fireCapture();
+    void fireCapture(0);
   }
 
   async function submitRender(styleId: (typeof styles)[number]['_id']) {
@@ -430,6 +449,8 @@ function LivePhone() {
           disabled={isReconnecting}
           onCapture={onCapture}
         />
+
+        <PrintTicket state={session.print} />
 
         <PhotoGallery
           photos={galleryPhotos}
