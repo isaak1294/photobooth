@@ -209,13 +209,41 @@ Capture path only, from a laptop:
 cd my-app && node scripts/verify-capture.mjs
 ```
 
+## Edge-to-edge (borderless)
+
+`jpn_hagaki_100x148mm` is the **bordered** postcard size: the printer keeps
+3.7mm top/bottom and 2.5mm sides white. The SELPHY prints borderless natively;
+over IPP that is a separate page-size choice, which CUPS names with a
+`.Borderless` suffix. Find it:
+
+```bash
+grep -o 'PageSize [^/]*Borderless[^:/]*' /etc/cups/ppd/selphy-net.ppd | sort -u
+```
+
+Then in `/etc/booth.env`:
+
+```
+BOOTH_PAGE_SIZE=jpn_hagaki_100x148mm.Borderless
+BOOTH_OUTER_MARGIN_MM=4
+```
+
+and `sudo systemctl restart booth-print`. The second line matters: borderless
+dye-sub **overscans** — the printer enlarges the image 1–3% so colour reaches
+the paper edge, which crops that much off every side. The strip's background
+fills the sheet so that goes unseen, but photos and the footer at the default
+2.5mm inset would get nicked. 4mm keeps them clear; `read_page_size_px()` picks
+up the borderless page geometry from the PPD on its own. Test with:
+
+```bash
+python3 photobooth_print.py --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
+```
+
+If the grep finds no `.Borderless` size, this printer's IPP path can't do it
+and the answer is the USB + Gutenprint queue below.
+
 ## Swapping to USB + Gutenprint
 
-The `selphy-net` IPP-over-Wi-Fi queue is a **test path**. It is not borderless:
-the printer advertises 3.7mm top/bottom and 2.5mm left/right hard margins, and
-`StripLayout.outer_margin_mm` is 2.5mm — the same number. So on this queue the
-top and bottom photos get clipped into by about 14px. Expect it; it is not a
-layout bug.
+The `selphy-net` IPP-over-Wi-Fi queue is a **test path**.
 
 Debian's packaged Gutenprint is a June 2022 snapshot that predates CP1500
 support (added October 2022), so the production path needs 5.3.5 from source.

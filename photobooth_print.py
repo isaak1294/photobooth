@@ -35,7 +35,7 @@ import queue
 import re
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -205,7 +205,7 @@ def layout_for(name: str | None) -> StripLayout:
     falls back to the event default — a strip in the wrong colours beats no
     strip, and the kiosk and this file can be deployed in either order."""
     if name is not None and name in THEMES:
-        return THEMES[name]
+        return _with_env_margin(THEMES[name])
     if name is not None:
         log.warning("unknown theme %r; using %s", name, os.environ.get("BOOTH_THEME", DEFAULT_THEME))
     return layout_from_env()
@@ -216,9 +216,25 @@ def layout_from_env() -> StripLayout:
     unknown name is a loud failure at startup, not a white strip at 9pm."""
     name = os.environ.get("BOOTH_THEME", DEFAULT_THEME)
     try:
-        return THEMES[name]
+        return _with_env_margin(THEMES[name])
     except KeyError:
         raise SystemExit(f"BOOTH_THEME={name!r} is not one of: {', '.join(THEMES)}") from None
+
+
+def _with_env_margin(layout: StripLayout) -> StripLayout:
+    """Apply BOOTH_OUTER_MARGIN_MM, the inset of photos and footer from the
+    strip edge. Borderless dye-sub OVERSCANS — the printer enlarges the image
+    ~1-3% so colour reaches the paper edge — which crops that much off every
+    side. The background survives that unseen; a photo or the footer 2.5mm
+    from the edge does not. 4mm is a safe value on the SELPHY."""
+    raw = os.environ.get("BOOTH_OUTER_MARGIN_MM")
+    if not raw:
+        return layout
+    try:
+        margin = float(raw)
+    except ValueError:
+        raise SystemExit(f"BOOTH_OUTER_MARGIN_MM={raw!r} is not a number") from None
+    return replace(layout, outer_margin_mm=margin)
 
 
 @dataclass
@@ -465,7 +481,11 @@ class PrintService:
 
     def submit(self, pdf_path: Path, title: str = "booth-strip") -> int:
         options = {
+            # Both spellings of the same choice. `media` is the IPP name and is
+            # what the IPP queue understands; `PageSize` is the PPD option, and
+            # is the one that reliably selects a ".Borderless" variant.
             "media": self.page_size,
+            "PageSize": self.page_size,
             "print-scaling": "none",   # modern CUPS: do not fit/fill/scale
             "fit-to-page": "false",    # legacy filters honour this instead
             "copies": str(self.copies),
