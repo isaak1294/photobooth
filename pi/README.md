@@ -30,6 +30,22 @@ strips keep coming out; the uploads queue up and drain when it returns.
 and phone hotspots all work with no port forwarding. Manage it over a direct
 ethernet cable — AP client isolation blocks inbound SSH on the venue network.
 
+## Exactly one listener, always via systemd
+
+Never start `node pi-listener.mjs` by hand while `booth-capture` is enabled.
+Two listeners both subscribe to the same capture requests, both claim every
+one, and both try to shoot — `rpicam-jpeg` lets only one of them open the
+sensor, so the loser marks the request `failed`. The kiosk then says the photo
+didn't take while the other process really took it, and which one wins is a
+race, so it comes and goes. Check before an event:
+
+```bash
+pgrep -af pi-listener        # exactly one line, /usr/bin/node pi-listener.mjs
+```
+
+Two lines means a stray copy: `kill <pid>` the one without `/usr/bin/`. For a
+manual run, stop the service first (`sudo systemctl stop booth-capture`).
+
 ## Nothing else may hold the camera
 
 `rpicam-jpeg` needs **exclusive** access to the IMX708. If any other process has
