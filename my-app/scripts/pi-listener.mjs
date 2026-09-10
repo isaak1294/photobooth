@@ -273,6 +273,9 @@ async function maybeDropPrintJob(row, framePath) {
     token: row.token,
     frames,
     sheets: 1,
+    // The guest's strip theme from the kiosk picker; null on a phone-started
+    // burst, which the agent resolves to BOOTH_THEME.
+    theme: row.theme ?? null,
     createdAt: Date.now(),
   };
 

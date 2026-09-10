@@ -23,6 +23,9 @@
   var cfg = window.KIOSK || {};
   var SHOTS = cfg.shots || 4;
   var DEMO = !!cfg.demo;
+  // Strip theme key, sent with every capture so the Pi prints in it. Starts on
+  // the server's default; the picker on the idle screen changes it per guest.
+  var theme = cfg.theme || 'thunderfest';
 
   var COUNTDOWN_MS = 3000;
   var SHUTTER_LEAD_MS = 1800; // request → Pi shutter, with COUNTDOWN_MS=0 on the Pi
@@ -49,6 +52,7 @@
     },
     start: $('start'),
     startTitle: $('start-title'),
+    themes: $('themes'),
     pipsLabel: $('pips-label'),
     pips: $('pips'),
     num: $('num'),
@@ -95,6 +99,7 @@
           burstId: burst.burstId,
           seq: burst.seq,
           framesTotal: burst.framesTotal,
+          theme: burst.theme,
         }),
       }).then(function (body) {
         return body.requestId;
@@ -232,6 +237,7 @@
     strip = [];
     buildStrip();
     el.printState.hidden = true;
+    selectTheme(cfg.theme || 'thunderfest');
     el.start.disabled = true;
     el.startTitle.textContent = 'Warming up…';
     setScreen('idle');
@@ -276,7 +282,7 @@
     armStageTimeout();
 
     var mine = run;
-    var burst = { burstId: burstId, seq: run.shot - 1, framesTotal: SHOTS };
+    var burst = { burstId: burstId, seq: run.shot - 1, framesTotal: SHOTS, theme: theme };
     booth.requestCapture(session.token, burst).then(
       function (requestId) {
         if (run === mine) run.requestId = requestId;
@@ -514,6 +520,22 @@
     burstId = mintBurstId();
     fire(1);
   });
+
+  // Frame picker. Event delegation, so the chips can be server-rendered.
+  el.themes.addEventListener('click', function (event) {
+    var chip = event.target.closest ? event.target.closest('.theme') : null;
+    if (!chip || run) return;
+    selectTheme(chip.getAttribute('data-theme'));
+  });
+  function selectTheme(key) {
+    theme = key;
+    var chips = el.themes.querySelectorAll('.theme');
+    for (var i = 0; i < chips.length; i++) {
+      var on = chips[i].getAttribute('data-theme') === key;
+      chips[i].classList.toggle('is-selected', on);
+      chips[i].setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+  }
   el.retry.addEventListener('click', function () {
     fire(failedShot);
   });

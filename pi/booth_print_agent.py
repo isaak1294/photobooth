@@ -61,7 +61,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(_HERE), str(_HERE.parent)]
 
-from photobooth_print import PrintService, PrintTask, PrintWorker, StripLayout  # noqa: E402
+from photobooth_print import PrintService, PrintTask, PrintWorker, StripLayout, layout_for  # noqa: E402
 
 log = logging.getLogger("booth.agent")
 
@@ -199,11 +199,15 @@ def build_task(job: dict) -> PrintTask:
     missing = [str(p) for p in frames if not p.exists()]
     if missing:
         raise FileNotFoundError(f"frames missing from disk: {', '.join(missing)}")
+    theme = job.get("theme")
     return PrintTask(
         photo_paths=frames,
         session_id=str(job.get("sessionId", "")),
         burst_id=str(job["burstId"]),
         token=str(job.get("token", "")),
+        # The guest's pick on the kiosk travels with the capture and lands in
+        # the job; a phone-started burst carries none and gets BOOTH_THEME.
+        strip_layout=layout_for(theme if isinstance(theme, str) else None),
     )
 
 

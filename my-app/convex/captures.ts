@@ -16,9 +16,13 @@ export const requestCapture = mutation({
     burstId: v.optional(v.string()),
     seq: v.optional(v.number()),
     framesTotal: v.optional(v.number()),
+    // Strip theme key from the kiosk's picker. Validated to a short slug: it
+    // ends up in a filename-adjacent JSON job on the Pi and in a log line.
+    theme: v.optional(v.string()),
   },
   returns: v.id('captureRequests'),
-  handler: async (ctx, { token, burstId, seq, framesTotal }) => {
+  handler: async (ctx, { token, burstId, seq, framesTotal, theme }) => {
+    if (theme !== undefined && !/^[a-z0-9-]{1,32}$/.test(theme)) throw new Error('Invalid theme');
     const session = await ctx.db
       .query('sessions')
       .withIndex('by_token', (q) => q.eq('token', token))
@@ -40,6 +44,7 @@ export const requestCapture = mutation({
       ...(burstId !== undefined ? { burstId } : {}),
       ...(seq !== undefined ? { seq } : {}),
       ...(framesTotal !== undefined ? { framesTotal } : {}),
+      ...(theme !== undefined ? { theme } : {}),
     });
   },
 });
@@ -72,6 +77,7 @@ export const pendingCaptures = query({
       burstId: v.union(v.string(), v.null()),
       seq: v.union(v.number(), v.null()),
       framesTotal: v.union(v.number(), v.null()),
+      theme: v.union(v.string(), v.null()),
       // When the request was written. A request that sat pending while the Pi
       // was offline is not a guest still standing there — the listener expires
       // it rather than shooting it.
@@ -95,6 +101,7 @@ export const pendingCaptures = query({
           burstId: r.burstId ?? null,
           seq: r.seq ?? null,
           framesTotal: r.framesTotal ?? null,
+          theme: r.theme ?? null,
           createdAt: r._creationTime,
         });
       }

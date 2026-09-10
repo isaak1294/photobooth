@@ -125,19 +125,25 @@ class StripLayout:
     # Keyline drawn around each photo cell, 0 for none.
     cell_border_mm: float = 0.0
     cell_border_colour: RGB = (0, 0, 0)
-    # Lightning bolts either side of the footer text (Thunderfest).
-    footer_bolts: bool = False
-    bolt_colour: RGB = (255, 184, 28)
+    # Ornament drawn either side of the big footer line: "bolt", "star" or "".
+    footer_ornament: str = ""
+    ornament_colour: RGB = (255, 184, 28)
 
 
 # UVic Vikes navy + gold. Approximations of the brand Pantones (2955 C / 1235 C),
 # tuned so the gold still reads as gold on dye-sub rather than going mustard.
 UVIC_NAVY: RGB = (0, 58, 112)
 UVIC_GOLD: RGB = (255, 184, 28)
+# POPFLASH — the booth's own brand (my-app/app/globals.css).
+POP_YELLOW: RGB = (255, 222, 3)
+POP_PINK: RGB = (255, 45, 149)
+INK: RGB = (0, 0, 0)
+PAPER: RGB = (255, 255, 255)
 
+# Keys are what the kiosk sends on each capture (app/kiosk/route.ts lists them
+# for the picker) and what the print job carries; keep them stable. An unknown
+# key falls back to BOOTH_THEME, so adding one here first is always safe.
 THEMES: dict[str, StripLayout] = {
-    # Plain white strip, dark caption. What the booth printed before themes.
-    "classic": StripLayout(),
     # UVic Thunderfest: navy strip, gold keylines, bolts around the wordmark.
     # 14mm footer instead of 10 to fit the two-line lockup; each cell gives up
     # ~1mm of height for it.
@@ -147,14 +153,62 @@ THEMES: dict[str, StripLayout] = {
         footer_subtext="UVIC  ·  2026",
         background=UVIC_NAVY,
         footer_colour=UVIC_GOLD,
-        footer_subcolour=(255, 255, 255),
+        footer_subcolour=PAPER,
         cell_border_mm=0.6,
         cell_border_colour=UVIC_GOLD,
-        footer_bolts=True,
-        bolt_colour=UVIC_GOLD,
+        footer_ornament="bolt",
+        ornament_colour=UVIC_GOLD,
     ),
+    # Vikes colours the other way round: gold field, navy everything else.
+    "vikes": StripLayout(
+        footer_mm=14.0,
+        footer_text="GO VIKES",
+        footer_subtext="UVIC  ·  2026",
+        background=UVIC_GOLD,
+        footer_colour=UVIC_NAVY,
+        footer_subcolour=UVIC_NAVY,
+        cell_border_mm=0.6,
+        cell_border_colour=UVIC_NAVY,
+        footer_ornament="bolt",
+        ornament_colour=UVIC_NAVY,
+    ),
+    # The booth's own look: yellow, black keylines, pink stars.
+    "popflash": StripLayout(
+        footer_mm=14.0,
+        footer_text="POPFLASH",
+        footer_subtext="YOUR PARTY. BUT LOUDER.",
+        background=POP_YELLOW,
+        footer_colour=INK,
+        footer_subcolour=INK,
+        cell_border_mm=0.6,
+        cell_border_colour=INK,
+        footer_ornament="star",
+        ornament_colour=POP_PINK,
+    ),
+    # Black field, hairline white keylines, quiet caption.
+    "midnight": StripLayout(
+        footer_text="THE BOOTH  ·  2026",
+        background=INK,
+        footer_colour=PAPER,
+        footer_subcolour=PAPER,
+        cell_border_mm=0.4,
+        cell_border_colour=PAPER,
+    ),
+    # Plain white strip, dark caption. What the booth printed before themes.
+    "classic": StripLayout(),
 }
 DEFAULT_THEME = "thunderfest"
+
+
+def layout_for(name: str | None) -> StripLayout:
+    """The layout for a theme key carried on a print job. Unknown or missing
+    falls back to the event default — a strip in the wrong colours beats no
+    strip, and the kiosk and this file can be deployed in either order."""
+    if name is not None and name in THEMES:
+        return THEMES[name]
+    if name is not None:
+        log.warning("unknown theme %r; using %s", name, os.environ.get("BOOTH_THEME", DEFAULT_THEME))
+    return layout_from_env()
 
 
 def layout_from_env() -> StripLayout:
@@ -257,7 +311,7 @@ def _draw_footer(
     bolt_h = int(footer * (0.62 if has_sub else 0.8))
     bolt_w = int(bolt_h * 0.55)
     bolt_pad = int(footer * 0.12)
-    text_max = cell_w - (2 * (bolt_w + bolt_pad) if layout.footer_bolts else 0)
+    text_max = cell_w - (2 * (bolt_w + bolt_pad) if layout.footer_ornament else 0)
 
     title_start = int(footer * (0.42 if has_sub else 0.55))
     font, box = _fit_text(draw, layout.footer_text, text_max, title_start)
@@ -284,19 +338,37 @@ def _draw_footer(
             fill=layout.footer_subcolour,
         )
 
-    if layout.footer_bolts:
-        # Centred on the title line, just outside it on both sides. The right
-        # one is mirrored so the pair points inward.
-        bolt_top = block_top + text_h // 2 - bolt_h // 2
+    if layout.footer_ornament:
+        # Centred on the title line, just outside it on both sides. A bolt is
+        # mirrored on the right so the pair points inward.
+        top_y = block_top + text_h // 2 - bolt_h // 2
         left_x = title_x - bolt_pad - bolt_w
         right_x = title_x + text_w + bolt_pad
-        _draw_bolt(draw, left_x, bolt_top, bolt_w, bolt_h, layout.bolt_colour)
-        _draw_bolt(draw, right_x, bolt_top, bolt_w, bolt_h, layout.bolt_colour, mirror=True)
+        if layout.footer_ornament == "bolt":
+            _draw_bolt(draw, left_x, top_y, bolt_w, bolt_h, layout.ornament_colour)
+            _draw_bolt(draw, right_x, top_y, bolt_w, bolt_h, layout.ornament_colour, mirror=True)
+        elif layout.footer_ornament == "star":
+            _draw_star(draw, left_x + bolt_w // 2, top_y + bolt_h // 2, bolt_h // 2, layout.ornament_colour)
+            _draw_star(draw, right_x + bolt_w // 2, top_y + bolt_h // 2, bolt_h // 2, layout.ornament_colour)
+        else:
+            raise ValueError(f"unknown footer_ornament {layout.footer_ornament!r}")
 
 
 # A lightning bolt in a unit box, top-left origin. Zig down-left, kick out to
 # the right, zig down-left to the tip.
 _BOLT_UNIT = [(0.62, 0.0), (0.12, 0.56), (0.44, 0.56), (0.30, 1.0), (0.92, 0.40), (0.56, 0.40), (0.78, 0.0)]
+
+
+def _draw_star(draw: ImageDraw.ImageDraw, cx: int, cy: int, r: int, colour: RGB) -> None:
+    """Five-point star, one point up, outer radius r."""
+    import math
+
+    points = []
+    for i in range(10):
+        radius = r if i % 2 == 0 else r * 0.42
+        angle = math.radians(-90 + i * 36)
+        points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    draw.polygon(points, fill=colour)
 
 
 def _draw_bolt(

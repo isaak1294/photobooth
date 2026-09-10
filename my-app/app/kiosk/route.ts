@@ -14,6 +14,20 @@
 const DEFAULT_SHOTS = 4;
 const MAX_SHOTS = 8;
 
+// Strip themes the guest can pick before pressing start. `key` must exist in
+// THEMES in photobooth_print.py — that's what the Pi's print agent looks up;
+// an unknown key there falls back to the event default, so add the Python
+// side first. The colours here only paint the chip; the strip's real look is
+// defined in Python.
+const THEMES = [
+  { key: 'thunderfest', label: 'Thunderfest', bg: '#003a70', fg: '#ffb81c' },
+  { key: 'vikes', label: 'Go Vikes', bg: '#ffb81c', fg: '#003a70' },
+  { key: 'popflash', label: 'Popflash', bg: '#ffde03', fg: '#000000' },
+  { key: 'midnight', label: 'Midnight', bg: '#000000', fg: '#ffffff' },
+  { key: 'classic', label: 'Classic', bg: '#ffffff', fg: '#191919' },
+] as const;
+const DEFAULT_THEME = 'thunderfest';
+
 export const dynamic = 'force-dynamic';
 
 export function GET(request: Request) {
@@ -28,8 +42,14 @@ export function GET(request: Request) {
 }
 
 function render({ shots, demo }: { shots: number; demo: boolean }): string {
-  // Only numbers and a boolean go into the page, so no escaping is needed.
-  const config = JSON.stringify({ shots, demo });
+  // Numbers, a boolean and hard-coded slugs go into the page; nothing from the
+  // request, so no escaping is needed.
+  const config = JSON.stringify({ shots, demo, theme: DEFAULT_THEME });
+  const themeChips = THEMES.map(
+    (t) =>
+      `<button type="button" class="theme${t.key === DEFAULT_THEME ? ' is-selected' : ''}" data-theme="${t.key}" ` +
+      `style="background:${t.bg};color:${t.fg}" role="radio" aria-checked="${t.key === DEFAULT_THEME}">${t.label}</button>`,
+  ).join('\n      ');
 
   return `<!doctype html>
 <html lang="en">
@@ -61,6 +81,12 @@ function render({ shots, demo }: { shots: number; demo: boolean }): string {
 
   <section id="screen-idle" class="screen">
     <p class="sticker">📸 STEP UP · LOOK AT THE CAMERA</p>
+    <div class="themes-wrap">
+      <span class="themes-label">PICK YOUR FRAME</span>
+      <div id="themes" class="themes" role="radiogroup" aria-label="Strip frame">
+      ${themeChips}
+      </div>
+    </div>
     <div class="nudge">
       <button id="start" class="start" type="button" disabled>
         <span id="start-title" class="start-title display">Warming up…</span>

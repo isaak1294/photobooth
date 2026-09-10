@@ -60,6 +60,9 @@ export default defineSchema({
     burstId: v.optional(v.string()),
     seq: v.optional(v.number()),
     framesTotal: v.optional(v.number()),
+    // Strip theme the guest picked on the kiosk (a key in photobooth_print.py's
+    // THEMES). Rides along to the Pi's print job; absent means the event default.
+    theme: v.optional(v.string()),
   })
     .index('by_status', ['status'])
     .index('by_session', ['sessionId']),

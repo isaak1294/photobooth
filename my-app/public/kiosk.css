@@ -119,6 +119,55 @@ body {
   box-shadow: 4px 4px 0 0 #000;
   transform: rotate(1deg);
 }
+/* Frame picker: one chip per strip theme, painted in that theme's colours.
+   Radio semantics; the selected one gets the hard shadow and a tick. */
+.themes-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 3.5vmin;
+}
+.themes-label {
+  margin-bottom: 1.2vmin;
+  font-size: 1.9vmin;
+  letter-spacing: 0.12em;
+}
+.themes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 96vmin;
+}
+.theme {
+  margin: 0.8vmin;
+  padding: 1.3vmin 2.6vmin;
+  border: 3px solid #000;
+  font-family: inherit;
+  font-size: 2.3vmin;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    transform 90ms ease-out,
+    box-shadow 90ms ease-out,
+    opacity 90ms ease-out;
+}
+.theme:active {
+  transform: translate(3px, 3px);
+}
+.theme.is-selected {
+  opacity: 1;
+  box-shadow: 5px 5px 0 0 #000;
+  transform: rotate(-1.5deg) scale(1.06);
+}
+.theme.is-selected::before {
+  content: '✓ ';
+}
+
 /* The nudge lives on a wrapper: an animation on the button itself would outrank
    its :active transform and kill the press feedback. */
 .nudge {

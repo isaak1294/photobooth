@@ -117,10 +117,17 @@ EOF
 sudo chmod 600 /etc/booth.env
 ```
 
-`BOOTH_THEME` picks the strip's colours, caption and ornaments — `thunderfest`
-(UVic navy and gold, bolts around the wordmark) or `classic` (white, plain
-caption). Presets are `THEMES` in `photobooth_print.py`; the year and the
-caption text live there too. Preview one without a printer:
+The strip's colours, caption and ornaments are a **theme**: `thunderfest`
+(UVic navy and gold, bolts around the wordmark), `vikes` (gold field, navy),
+`popflash` (the booth's yellow, pink stars), `midnight` (black, white keylines)
+or `classic` (plain white). Guests pick one on the kiosk before pressing start
+— it rides on every capture request and into the print job, so each sheet
+prints in the frame that guest chose. `BOOTH_THEME` is the **fallback** for
+bursts that carry no theme (phone-started runs, or a key the Pi doesn't know
+yet), and the kiosk's preselected chip. Presets are `THEMES` in
+`photobooth_print.py`; the year and caption text live there too. To add one,
+add it there first, then to the picker list in `my-app/app/kiosk/route.ts`.
+Preview one without a printer:
 
 ```bash
 python3 photobooth_print.py --theme thunderfest --out /tmp/preview.pdf   # also writes /tmp/preview.png

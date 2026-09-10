@@ -15,18 +15,20 @@ export async function POST(request: Request) {
     burstId?: unknown;
     seq?: unknown;
     framesTotal?: unknown;
+    theme?: unknown;
   };
   if (typeof body.token !== 'string' || body.token === '') return json({ error: 'Missing token' }, 400);
   const burst =
     typeof body.burstId === 'string' && Number.isInteger(body.seq) && Number.isInteger(body.framesTotal)
       ? { burstId: body.burstId, seq: body.seq as number, framesTotal: body.framesTotal as number }
       : {};
+  const theme = typeof body.theme === 'string' && /^[a-z0-9-]{1,32}$/.test(body.theme) ? { theme: body.theme } : {};
 
   const convex = convexClient();
   if (convex === null) return json({ error: 'NEXT_PUBLIC_CONVEX_URL is not set' }, 500);
 
   try {
-    const requestId = await convex.mutation(api.captures.requestCapture, { token: body.token, ...burst });
+    const requestId = await convex.mutation(api.captures.requestCapture, { token: body.token, ...burst, ...theme });
     return json({ requestId });
   } catch (error) {
     console.error('[kiosk] capture request failed:', error);
