@@ -110,7 +110,12 @@ class StripLayout:
     shared by all of them."""
 
     photos: int = 4
+    # Inset of photos and footer from the strip's left/right edges. Top and
+    # bottom follow it unless set — borderless printers crop unevenly, so the
+    # top usually needs more (see BOOTH_MARGIN_TOP_MM and --calibrate).
     outer_margin_mm: float = 2.5
+    margin_top_mm: float | None = None
+    margin_bottom_mm: float | None = None
     gutter_mm: float = 2.0
     # 18mm left most of the footer band as dead white: _fit_text shrinks the
     # caption until it fits the 530px cell width, which lands around 30px tall.
@@ -222,19 +227,28 @@ def layout_from_env() -> StripLayout:
 
 
 def _with_env_margin(layout: StripLayout) -> StripLayout:
-    """Apply BOOTH_OUTER_MARGIN_MM, the inset of photos and footer from the
-    strip edge. Borderless dye-sub OVERSCANS — the printer enlarges the image
-    ~1-3% so colour reaches the paper edge — which crops that much off every
-    side. The background survives that unseen; a photo or the footer 2.5mm
-    from the edge does not. 4mm is a safe value on the SELPHY."""
-    raw = os.environ.get("BOOTH_OUTER_MARGIN_MM")
-    if not raw:
-        return layout
-    try:
-        margin = float(raw)
-    except ValueError:
-        raise SystemExit(f"BOOTH_OUTER_MARGIN_MM={raw!r} is not a number") from None
-    return replace(layout, outer_margin_mm=margin)
+    """Apply the margin overrides: BOOTH_OUTER_MARGIN_MM for the sides (and top
+    and bottom unless they are set), BOOTH_MARGIN_TOP_MM, BOOTH_MARGIN_BOTTOM_MM.
+
+    Borderless dye-sub OVERSCANS — the printer enlarges the image a few percent
+    so colour reaches the paper edge — which crops that much off every side,
+    and not evenly: the SELPHY loses more off the top than the bottom. The
+    background survives that unseen; a photo or the footer 2.5mm from the edge
+    does not. Print one `--calibrate` sheet and read the numbers off it."""
+    changes: dict[str, float] = {}
+    for env, field_name in (
+        ("BOOTH_OUTER_MARGIN_MM", "outer_margin_mm"),
+        ("BOOTH_MARGIN_TOP_MM", "margin_top_mm"),
+        ("BOOTH_MARGIN_BOTTOM_MM", "margin_bottom_mm"),
+    ):
+        raw = os.environ.get(env)
+        if not raw:
+            continue
+        try:
+            changes[field_name] = float(raw)
+        except ValueError:
+            raise SystemExit(f"{env}={raw!r} is not a number") from None
+    return replace(layout, **changes) if changes else layout
 
 
 @dataclass
@@ -286,12 +300,14 @@ def build_strip(
         raise ValueError(f"need {layout.photos} photos, got {len(photos)}")
 
     margin = mm_to_px(layout.outer_margin_mm)
+    top = mm_to_px(layout.margin_top_mm if layout.margin_top_mm is not None else layout.outer_margin_mm)
+    bottom = mm_to_px(layout.margin_bottom_mm if layout.margin_bottom_mm is not None else layout.outer_margin_mm)
     gutter = mm_to_px(layout.gutter_mm)
     footer = mm_to_px(layout.footer_mm)
     n = layout.photos
 
     cell_w = width - 2 * margin
-    usable_h = height - 2 * margin - footer - gutter * (n - 1)
+    usable_h = height - top - bottom - footer - gutter * (n - 1)
     cell_h = usable_h // n
     if cell_w <= 0 or cell_h <= 0:
         raise ValueError("strip margins/footer leave no room for photos")
@@ -300,7 +316,7 @@ def build_strip(
     draw = ImageDraw.Draw(strip)
     border = mm_to_px(layout.cell_border_mm)
     for i, photo in enumerate(photos[:n]):
-        y = margin + i * (cell_h + gutter)
+        y = top + i * (cell_h + gutter)
         # The keyline sits INSIDE the cell so the geometry above still holds;
         # the photo shrinks by the line width on each side.
         if border > 0:
@@ -311,16 +327,16 @@ def build_strip(
         )
 
     if layout.footer_text:
-        _draw_footer(draw, layout, width, height, margin, footer, cell_w)
+        _draw_footer(draw, layout, width, height, bottom, footer, cell_w)
     return strip
 
 
 def _draw_footer(
-    draw: ImageDraw.ImageDraw, layout: StripLayout, width: int, height: int, margin: int, footer: int, cell_w: int
+    draw: ImageDraw.ImageDraw, layout: StripLayout, width: int, height: int, bottom: int, footer: int, cell_w: int
 ) -> None:
     """The caption band at the bottom of the strip: one big line, an optional
     small line, and optional lightning bolts flanking the big one."""
-    top = height - margin - footer
+    top = height - bottom - footer
     has_sub = bool(layout.footer_subtext)
 
     # Bolts take a square zone at each end of the band; the text fits between.
@@ -421,6 +437,35 @@ def build_sheet(
             draw.line([(x, 0), (x, tick)], fill=(140, 140, 140), width=2)
             draw.line([(x, sheet_h - tick), (x, sheet_h)], fill=(140, 140, 140), width=2)
 
+    return sheet
+
+
+def build_calibration_sheet(sheet_px: tuple[int, int], max_mm: int = 12) -> Image.Image:
+    """A sheet of nested rectangles, one per millimetre in from the paper edge,
+    each labelled on all four sides with its inset. Print it borderless and the
+    outermost line still visible on a side IS that side's overscan in mm — set
+    the margins a couple of mm beyond it. Drawn black on white so the answer
+    reads under any light, with the centre cut line for good measure."""
+    w, h = sheet_px
+    sheet = Image.new("RGB", (w, h), (255, 255, 255))
+    draw = ImageDraw.Draw(sheet)
+    font = _load_font(int(mm_to_px(2.2)))
+    for d in range(1, max_mm + 1):
+        inset = mm_to_px(d)
+        heavy = d % 5 == 0
+        draw.rectangle([inset, inset, w - 1 - inset, h - 1 - inset], outline=(0, 0, 0), width=3 if heavy else 1)
+        label = f"{d}"
+        box = draw.textbbox((0, 0), label, font=font)
+        tw, th = box[2] - box[0], box[3] - box[1]
+        pad = mm_to_px(0.3)
+        # Just inside the line, centred on each side; staggered so labels for
+        # neighbouring millimetres don't overprint.
+        shift = (d % 2) * mm_to_px(6)
+        draw.text((w // 2 - tw // 2 + shift, inset + pad), label, font=font, fill=(0, 0, 0))  # top
+        draw.text((w // 2 - tw // 2 + shift, h - inset - pad - th - box[1]), label, font=font, fill=(0, 0, 0))  # bottom
+        draw.text((inset + pad, h // 2 - th // 2 + shift), label, font=font, fill=(0, 0, 0))  # left
+        draw.text((w - inset - pad - tw, h // 2 - th // 2 + shift), label, font=font, fill=(0, 0, 0))  # right
+    draw.line([(w // 2, 0), (w // 2, h)], fill=(160, 160, 160), width=2)
     return sheet
 
 
@@ -740,20 +785,29 @@ def main() -> None:
         default=os.environ.get("BOOTH_THEME", DEFAULT_THEME),
         help="strip theme (default: $BOOTH_THEME or %(default)s)",
     )
+    parser.add_argument(
+        "--calibrate",
+        action="store_true",
+        help="compose a margin-calibration sheet instead of strips (print it borderless, read the overscan off it)",
+    )
     parser.add_argument("--print", dest="do_print", action="store_true")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     sheet_px = read_page_size_px(args.printer, args.page_size)
-    strip_layout = THEMES[args.theme]
-    photos = (
-        [Image.open(p) for p in args.photos]
-        if args.photos
-        else [_placeholder(i) for i in range(strip_layout.photos)]
-    )
-
-    sheet = build_sheet(photos, sheet_px, strip_layout, SheetLayout(strips_per_sheet=args.strips))
+    if args.calibrate:
+        sheet = build_calibration_sheet(sheet_px)
+    else:
+        # Same margin env vars the print agent honours, so a CLI test print
+        # matches what the booth will produce.
+        strip_layout = _with_env_margin(THEMES[args.theme])
+        photos = (
+            [Image.open(p) for p in args.photos]
+            if args.photos
+            else [_placeholder(i) for i in range(strip_layout.photos)]
+        )
+        sheet = build_sheet(photos, sheet_px, strip_layout, SheetLayout(strips_per_sheet=args.strips))
     pdf = sheet_to_pdf(sheet, args.out)
     sheet.save(args.out.with_suffix(".png"))
     print(f"sheet: {sheet.size[0]} x {sheet.size[1]} px -> {pdf}")

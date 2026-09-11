@@ -220,23 +220,42 @@ over IPP that is a separate page-size choice, which CUPS names with a
 grep -o 'PageSize [^/]*Borderless[^:/]*' /etc/cups/ppd/selphy-net.ppd | sort -u
 ```
 
-Then in `/etc/booth.env`:
+Set `BOOTH_PAGE_SIZE=jpn_hagaki_100x148mm.Borderless` in `/etc/booth.env`.
+`read_page_size_px()` picks up the borderless page geometry from the PPD on
+its own.
 
-```
-BOOTH_PAGE_SIZE=jpn_hagaki_100x148mm.Borderless
-BOOTH_OUTER_MARGIN_MM=4
-```
-
-and `sudo systemctl restart booth-print`. The second line matters: borderless
-dye-sub **overscans** — the printer enlarges the image 1–3% so colour reaches
-the paper edge, which crops that much off every side. The strip's background
-fills the sheet so that goes unseen, but photos and the footer at the default
-2.5mm inset would get nicked. 4mm keeps them clear; `read_page_size_px()` picks
-up the borderless page geometry from the PPD on its own. Test with:
+Then **calibrate the margins**. Borderless dye-sub **overscans** — the printer
+enlarges the image a few percent so colour reaches the paper edge — which crops
+that much off every side, and unevenly (the SELPHY loses more off the top than
+the bottom). The strip's background fills the sheet so that goes unseen, but
+photos and the footer at the default 2.5mm inset get cut. Print one sheet of
+nested millimetre rulers:
 
 ```bash
-python3 photobooth_print.py --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
+cd ~/ai-photobooth/booth
+python3 photobooth_print.py --calibrate --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
 ```
+
+On the print, the outermost rectangle still visible on each side is that
+side's overscan in mm. Add 2mm of safety and put the numbers in
+`/etc/booth.env`:
+
+```
+BOOTH_OUTER_MARGIN_MM=5      # left and right (and top/bottom unless set below)
+BOOTH_MARGIN_TOP_MM=8
+BOOTH_MARGIN_BOTTOM_MM=4
+```
+
+`sudo systemctl restart booth-print`, then test a real strip with the same
+values (the CLI reads them from the environment, not from `/etc/booth.env`):
+
+```bash
+BOOTH_OUTER_MARGIN_MM=5 BOOTH_MARGIN_TOP_MM=8 BOOTH_MARGIN_BOTTOM_MM=4 \
+  python3 photobooth_print.py --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
+```
+
+Photos shrink by whatever the margins grow; on a 148mm strip a 3mm change is
+under 1mm per cell.
 
 If the grep finds no `.Borderless` size, this printer's IPP path can't do it
 and the answer is the USB + Gutenprint queue below.
