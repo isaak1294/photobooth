@@ -35,7 +35,8 @@ Keep it that way when editing: `node -e` with acorn at `ecmaVersion: 2017` is
 the cheap check for the script. Nothing else in the app is affected.
 
 On the iPad: open `/kiosk` in Safari and **Add to Home Screen** so it launches
-without browser chrome. Set **Auto-Lock to Never** (iOS 12 has no wake-lock API)
+without browser chrome (unless the kiosk takes Square payments — then it must
+stay a Safari tab; see "Taking payment with Square"). Set **Auto-Lock to Never** (iOS 12 has no wake-lock API)
 and turn on Guided Access if it will be unattended. The QR points at
 `NEXT_PUBLIC_BOOTH_PUBLIC_URL` if set, otherwise at whatever address the iPad
 reached the server on — which on a LAN dev server is the machine's IP, i.e.
@@ -66,21 +67,29 @@ convex dev` once to link your checkout to the cloud project.
 
 Off by default: the kiosk shoots for free until `SQUARE_PRICE_CENTS` is set on
 the Convex deployment. With it set, every session must be paid before the
-shutter fires — the kiosk's Start button reads "Pay at the counter" and the
+shutter fires: the kiosk's button reads "$5.00 · TAP TO PAY" and the
 `requestCapture` mutation refuses unpaid sessions, whoever calls it.
 
-The charge happens on the **operator's phone**, not the kiosk: the Square Point
-of Sale app needs iOS 17.1+ / Android 7+, which the iPad mini 3 can't run, and
-Square's POS API only works from a page on the same device as the app. So:
+**On the kiosk (the normal way).** The guest taps the button, the Square Point
+of Sale app opens on the kiosk iPad with the amount, they tap their card on
+the Reader, Square hands the screen back, and the countdown starts. For that
+the kiosk device must be an iPad on **iPadOS 17.1+** (or Android 7+) with
+Square Point of Sale installed and signed in, the Reader paired inside it, and
+the kiosk page open in a **Safari tab** — not Add to Home Screen, because
+Square's callback always returns to the browser. Use Guided Access on Safari
+to keep guests in the tab. The old iPad mini 3 can still run the kiosk, but
+it can't run Square POS, so on it the button just waits for a payment taken
+elsewhere.
 
-1. On the phone: install Square Point of Sale, sign in, pair the Reader inside
-   it. Open **`/pay`** in Safari/Chrome — a plain tab, not Add to Home Screen
-   (Square's callback always lands in the browser).
-2. `/pay` lists recent sessions by short code (the kiosk's top-right chip). Tap
-   **Charge**, Square POS opens, tap the card on the Reader. Square returns to
-   `/pay/callback`, which asks Square's Orders API for the order and marks the
-   session paid only if it is completed, at our location, for at least our
-   price. The kiosk unlocks within two seconds.
+**On the operator's phone (backup).** `/pay`, opened in Safari/Chrome on any
+phone with Square POS + the Reader, lists recent sessions by the kiosk's
+top-right code with a Charge button each. Same Square round trip; the kiosk
+notices within two seconds and unlocks.
+
+Both paths end at `/pay/callback`, which asks Square's Orders API for the
+order and marks the session paid only if it is completed, at our location,
+for at least our price. The `payments` table in the Convex dashboard is the
+audit trail; a `failed` row's `error` says why a session won't unlock.
 
 Setup, once:
 
@@ -89,17 +98,26 @@ Setup, once:
   **Web Callback URL** to exactly `https://<your host>/pay/callback`. It must be
   HTTPS — a LAN `http://192.168…` dev server cannot be a callback; use the
   deployed host or a tunnel. There is no sandbox for the POS API.
-- `npx convex env set SQUARE_ACCESS_TOKEN <production token>` (Orders read),
-  `SQUARE_LOCATION_ID`, `SQUARE_PRICE_CENTS` (e.g. `500`). Optional:
-  `SQUARE_CURRENCY` (default USD), `SQUARE_ALLOW_CASH=1` to accept cash tenders
-  as *unverified* (Square gives no order id for cash, so nothing can be checked).
-- `.env.local`: `NEXT_PUBLIC_SQUARE_APPLICATION_ID`.
+- On the Convex deployment the app actually uses (the one in Vercel's
+  `NEXT_PUBLIC_CONVEX_URL`, not the personal one `npx convex dev` creates):
+  `SQUARE_ACCESS_TOKEN` (production token), `SQUARE_LOCATION_ID`,
+  `SQUARE_PRICE_CENTS` (e.g. `500`), `SQUARE_CURRENCY` (the account's currency,
+  e.g. `CAD`; a mismatch fails every charge with `currency_code_mismatch`).
+  Optional: `SQUARE_ALLOW_CASH=1` accepts cash tenders on `/pay` as
+  *unverified* (Square gives no order id for cash).
+- Vercel (and `.env.local`): `NEXT_PUBLIC_SQUARE_APPLICATION_ID`. Public env vars
+  are baked in at build time, so redeploy after setting it.
 
 Testing is a real $1 charge on your own card, then a refund from the Square
-Dashboard. `/kiosk?demo=1` walks the pay gate with a simulated till. The
-`payments` table in the Convex dashboard is the audit trail; a `failed` row's
-`error` says why a session won't unlock. The full API notes live in
-`.claude/skills/square-pos/`.
+Dashboard. `/kiosk?demo=1` walks the whole pay gate with a stand-in for Square.
+The full API notes live in `.claude/skills/square-pos/`.
+
+**Prepaid events.** `/prepaid-kiosk` is the same kiosk with payment taken out:
+every session it mints is marked prepaid, the button is plain "Take Photos",
+and Square is never opened, even with a price set. It takes the same
+`?shots=`/`?demo=1`. At an event that also charges, set `KIOSK_PREPAID_KEY`
+(same value on Vercel and Convex) and bookmark `/prepaid-kiosk?key=…` on the
+kiosk; without the variable the page is open to anyone who knows the URL.
 
 ## Does the pipeline work?
 

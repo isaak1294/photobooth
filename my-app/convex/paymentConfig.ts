@@ -1,5 +1,14 @@
 import type { DatabaseReader } from './_generated/server';
-import type { Id } from './_generated/dataModel';
+import type { Doc } from './_generated/dataModel';
+
+// Whether a caller may mint a prepaid session. KIOSK_PREPAID_KEY on the
+// deployment is optional: unset, any kiosk may (a free event, the default);
+// set, the caller must present it, so a guest who finds /prepaid-kiosk at a
+// paid event gets nothing. The Next server holds the same value.
+export function prepaidAllowed(key: string | undefined): boolean {
+  const required = process.env.KIOSK_PREPAID_KEY;
+  return !required || key === required;
+}
 
 // Payment settings, read from the deployment's environment (`npx convex env
 // set …`). Kept beside the functions rather than inside them so the capture
@@ -25,12 +34,14 @@ export function paymentConfig(): PaymentConfig {
   };
 }
 
-// A session counts as paid when it has a verified row, or an unverified cash row
-// (the operator vouched for it). `failed` and `refunded` do not unlock anything.
-export async function isSessionPaid(db: DatabaseReader, sessionId: Id<'sessions'>): Promise<boolean> {
+// A session counts as paid when it was minted prepaid (see /prepaid-kiosk), or
+// has a verified row, or an unverified cash row (the operator vouched for it).
+// `failed` and `refunded` do not unlock anything.
+export async function isSessionPaid(db: DatabaseReader, session: Doc<'sessions'>): Promise<boolean> {
+  if (session.prepaid === true) return true;
   const payment = await db
     .query('payments')
-    .withIndex('by_session', (q) => q.eq('sessionId', sessionId))
+    .withIndex('by_session', (q) => q.eq('sessionId', session._id))
     .first();
   return payment !== null && (payment.status === 'paid' || payment.status === 'unverified');
 }

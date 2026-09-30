@@ -1,25 +1,35 @@
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { mutation, query, internalMutation } from './_generated/server';
 import { captureStatus } from './captureStatus';
 import { printStatus } from './printStatus';
-import { isSessionPaid, paymentConfig } from './paymentConfig';
+import { isSessionPaid, paymentConfig, prepaidAllowed } from './paymentConfig';
 
 // Create a new booth run. The `token` is a random string carried in the QR link
 // — never a sequential id, so a stale QR from a test run can't surface someone
 // else's photos mid-demo (demo-plan §2.1). `shortCode` is the human-readable
 // code printed under the QR.
 export const createSession = mutation({
-  args: {},
+  args: {
+    // /prepaid-kiosk: the event is paid up front, so the session shoots with no
+    // Square payment. Gated by KIOSK_PREPAID_KEY when that is set (paymentConfig.ts).
+    prepaid: v.optional(v.boolean()),
+    key: v.optional(v.string()),
+  },
   returns: v.object({
     sessionId: v.id('sessions'),
     token: v.string(),
     shortCode: v.string(),
   }),
-  handler: async (ctx) => {
+  handler: async (ctx, { prepaid, key }) => {
+    if (prepaid === true && !prepaidAllowed(key)) throw new ConvexError('Prepaid sessions need the kiosk key');
     const token = crypto.randomUUID();
     // e.g. "PB-4821" — enough to disambiguate the handful of sessions in a demo.
     const shortCode = `PB-${Math.floor(1000 + Math.random() * 9000)}`;
-    const sessionId = await ctx.db.insert('sessions', { token, shortCode });
+    const sessionId = await ctx.db.insert('sessions', {
+      token,
+      shortCode,
+      ...(prepaid === true ? { prepaid: true } : {}),
+    });
     return { sessionId, token, shortCode };
   },
 });
@@ -165,7 +175,7 @@ export const getSession = query({
         }
       : null;
 
-    const paid = paymentConfig().priceCents === 0 || (await isSessionPaid(ctx.db, session._id));
+    const paid = paymentConfig().priceCents === 0 || (await isSessionPaid(ctx.db, session));
 
     return { sessionId: session._id, shortCode: session.shortCode, paid, capture, photos, renders, print };
   },

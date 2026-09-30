@@ -35,7 +35,7 @@ function Booth() {
   useEffect(() => {
     let cancelled = false;
 
-    void createSession()
+    void createSession({})
       .then(async (session) => {
         if (cancelled) return;
         const dataUrl = await makeQr(phoneUrlFor(session.token));

@@ -59,6 +59,35 @@ export function androidPosUrl(c: PosCharge): string {
   return 'intent:#Intent;' + parts.join(';') + ';end';
 }
 
+// What we put in Square's `state` (iOS) / REQUEST_METADATA (Android). Square
+// echoes it back untouched, and /pay/callback uses it to know which surface
+// started the charge and where to send the browser afterwards. One registered
+// callback URL serves both surfaces this way.
+export type PosState =
+  { surface: 'pay'; sessionId: string } | { surface: 'kiosk'; token: string; shots: number; theme: string };
+
+export function encodePosState(state: PosState): string {
+  return JSON.stringify(state);
+}
+
+export function decodePosState(raw: string | null): PosState | null {
+  if (!raw) return null;
+  let d: Record<string, unknown>;
+  try {
+    d = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (d.surface === 'pay' && typeof d.sessionId === 'string') return { surface: 'pay', sessionId: d.sessionId };
+  if (d.surface === 'kiosk' && typeof d.token === 'string') {
+    const shots =
+      typeof d.shots === 'number' && Number.isInteger(d.shots) && d.shots >= 1 && d.shots <= 8 ? d.shots : 4;
+    const theme = typeof d.theme === 'string' && /^[a-z0-9-]{1,32}$/.test(d.theme) ? d.theme : '';
+    return { surface: 'kiosk', token: d.token, shots, theme };
+  }
+  return null;
+}
+
 export type PosPlatform = 'ios' | 'android' | 'other';
 
 export function detectPosPlatform(userAgent: string): PosPlatform {
@@ -133,9 +162,21 @@ export function describePosError(code: string): string {
   }
 }
 
+// Formatted for the seller's own market, so CAD reads "$5.00" on a Canadian
+// till rather than "CA$5.00". Anything unmapped falls back to the code.
+const LOCALE_FOR: Record<string, string> = {
+  USD: 'en-US',
+  CAD: 'en-CA',
+  AUD: 'en-AU',
+  NZD: 'en-NZ',
+  GBP: 'en-GB',
+  EUR: 'en-IE',
+  JPY: 'ja-JP',
+};
+
 export function formatMoney(cents: number, currency: string): string {
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
+    return new Intl.NumberFormat(LOCALE_FOR[currency] ?? 'en-US', { style: 'currency', currency }).format(cents / 100);
   } catch {
     return `${(cents / 100).toFixed(2)} ${currency}`;
   }

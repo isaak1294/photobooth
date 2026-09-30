@@ -10,7 +10,19 @@
 Where each piece goes, following the conventions already here (kiosk talks only to `/kiosk/api/*`,
 secrets on the Convex deployment, every failure path writes a visible reason, Safari-12 JS on the kiosk).
 
-## Decision: separate pay device, kiosk observes
+## Update 2026-09-30: the kiosk charges itself now
+
+The user chose to upgrade the kiosk to an iPadOS 17.1+ tablet, so the primary flow is the POS API **from the
+kiosk page**: Start reads "$5.00 · TAP TO PAY", `startPayment()` in `public/kiosk.js` deep-links Square POS,
+and `/pay/callback` (the one registered callback) decodes `state.surface === 'kiosk'` and redirects to
+`/kiosk?resume=<token>&result=…&shots=N&theme=T`. `POST /kiosk/api/session {resume}` re-adopts the session,
+and a `paid` result auto-starts the countdown after a 1.5 s beat. The kiosk must be a Safari tab (Square returns
+to the browser, never a Home-Screen app). A stale kiosk tab that handed off and becomes visible again boots a
+fresh guest instead of resuming, so two tabs can't shoot one session. `/pay` on the operator's phone remains as
+the backup path and unlocks the kiosk through the idle poll. `SQUARE_CURRENCY` must match the Square account
+(this one is CAD); the default USD fails every charge with `currency_code_mismatch`.
+
+## Original decision: separate pay device, kiosk observes
 
 The kiosk iPad (iOS 12) can't run Square POS (needs 17.1+). So:
 
