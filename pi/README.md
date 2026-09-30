@@ -224,38 +224,51 @@ Set `BOOTH_PAGE_SIZE=jpn_hagaki_100x148mm.Borderless` in `/etc/booth.env`.
 `read_page_size_px()` picks up the borderless page geometry from the PPD on
 its own.
 
-Then **calibrate the margins**. Borderless dye-sub **overscans** — the printer
-enlarges the image a few percent so colour reaches the paper edge — which crops
-that much off every side, and unevenly (the SELPHY loses more off the top than
-the bottom). The strip's background fills the sheet so that goes unseen, but
-photos and the footer at the default 2.5mm inset get cut. Print one sheet of
-nested millimetre rulers:
+Then **calibrate the overscan**. Borderless dye-sub **overscans**: the printer
+enlarges the image a few percent so colour reaches the paper edge, which crops
+that much off every side, and not necessarily evenly. The bordered size loses
+its hard margins instead. Either way the symptom is photos nicked at the top,
+left and right while the **bottom looks fine**. The bottom is probably cropped
+too; you can't see it because the lowest ink (the footer) sits 6.5mm up, while
+photos sit 2.5mm from the other three edges. So measure rather than eyeball.
+Print one sheet of nested millimetre rulers **on the booth's page size**:
 
 ```bash
 cd ~/ai-photobooth/booth
 python3 photobooth_print.py --calibrate --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
 ```
 
-On the print, the outermost rectangle still visible on each side is that
-side's overscan in mm. Add 2mm of safety and put the numbers in
-`/etc/booth.env`:
+On the print, the number on the outermost rectangle you can see along its whole
+length is that side's overscan in mm. Put the four numbers straight into
+`/etc/booth.env`, with no safety added (the strip's own 2.5mm border is the
+safety). These are the values measured on our CP1500 on 2026-09-30:
 
 ```
-BOOTH_OUTER_MARGIN_MM=5      # left and right (and top/bottom unless set below)
-BOOTH_MARGIN_TOP_MM=8
-BOOTH_MARGIN_BOTTOM_MM=4
+BOOTH_OVERSCAN_TOP_MM=3.5
+BOOTH_OVERSCAN_BOTTOM_MM=3
+BOOTH_OVERSCAN_LEFT_MM=2
+BOOTH_OVERSCAN_RIGHT_MM=2
 ```
 
-`sudo systemctl restart booth-print`, then test a real strip with the same
-values (the CLI reads them from the environment, not from `/etc/booth.env`):
+The strips are then laid out inside what survives, so every photo keeps 2.5mm
+from the real paper edge and the cut ticks land mid-paper. Don't do this with
+`BOOTH_OUTER_MARGIN_MM`: that margin also applies at the centre cut, so raising
+it for the paper edge leaves each strip off-centre after cutting. If you set it
+(or `BOOTH_MARGIN_TOP_MM` / `_BOTTOM_MM`) for this in the past, remove them.
+
+`sudo systemctl restart booth-print` (the journal logs the overscan it picked
+up), then test a real strip with the same values. The CLI reads them from the
+environment, not from `/etc/booth.env`:
 
 ```bash
-BOOTH_OUTER_MARGIN_MM=5 BOOTH_MARGIN_TOP_MM=8 BOOTH_MARGIN_BOTTOM_MM=4 \
+BOOTH_OVERSCAN_TOP_MM=3.5 BOOTH_OVERSCAN_BOTTOM_MM=3 BOOTH_OVERSCAN_LEFT_MM=2 BOOTH_OVERSCAN_RIGHT_MM=2 \
   python3 photobooth_print.py --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
 ```
 
-Photos shrink by whatever the margins grow; on a 148mm strip a 3mm change is
-under 1mm per cell.
+Photos shrink by the overscan: each strip loses half the left+right total in
+width, and each of the four cells loses a quarter of the top+bottom total in
+height (2mm and about 1.6mm for the numbers above). Re-run the calibration after any
+change of printer, queue or page size.
 
 If the grep finds no `.Borderless` size, this printer's IPP path can't do it
 and the answer is the USB + Gutenprint queue below.
