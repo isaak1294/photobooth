@@ -62,6 +62,45 @@ spins up a local deployment and overwrites the cloud URLs in your `.env.local`
 with `127.0.0.1`. To make `npm run dev` correct, run `npx convex login && npx
 convex dev` once to link your checkout to the cloud project.
 
+## Taking payment with Square
+
+Off by default: the kiosk shoots for free until `SQUARE_PRICE_CENTS` is set on
+the Convex deployment. With it set, every session must be paid before the
+shutter fires — the kiosk's Start button reads "Pay at the counter" and the
+`requestCapture` mutation refuses unpaid sessions, whoever calls it.
+
+The charge happens on the **operator's phone**, not the kiosk: the Square Point
+of Sale app needs iOS 17.1+ / Android 7+, which the iPad mini 3 can't run, and
+Square's POS API only works from a page on the same device as the app. So:
+
+1. On the phone: install Square Point of Sale, sign in, pair the Reader inside
+   it. Open **`/pay`** in Safari/Chrome — a plain tab, not Add to Home Screen
+   (Square's callback always lands in the browser).
+2. `/pay` lists recent sessions by short code (the kiosk's top-right chip). Tap
+   **Charge**, Square POS opens, tap the card on the Reader. Square returns to
+   `/pay/callback`, which asks Square's Orders API for the order and marks the
+   session paid only if it is completed, at our location, for at least our
+   price. The kiosk unlocks within two seconds.
+
+Setup, once:
+
+- [Square Developer Console](https://developer.squareup.com/apps): create an app,
+  copy the **production** Application ID. Under *Point of Sale API → Web*, set the
+  **Web Callback URL** to exactly `https://<your host>/pay/callback`. It must be
+  HTTPS — a LAN `http://192.168…` dev server cannot be a callback; use the
+  deployed host or a tunnel. There is no sandbox for the POS API.
+- `npx convex env set SQUARE_ACCESS_TOKEN <production token>` (Orders read),
+  `SQUARE_LOCATION_ID`, `SQUARE_PRICE_CENTS` (e.g. `500`). Optional:
+  `SQUARE_CURRENCY` (default USD), `SQUARE_ALLOW_CASH=1` to accept cash tenders
+  as *unverified* (Square gives no order id for cash, so nothing can be checked).
+- `.env.local`: `NEXT_PUBLIC_SQUARE_APPLICATION_ID`.
+
+Testing is a real $1 charge on your own card, then a refund from the Square
+Dashboard. `/kiosk?demo=1` walks the pay gate with a simulated till. The
+`payments` table in the Convex dashboard is the audit trail; a `failed` row's
+`error` says why a session won't unlock. The full API notes live in
+`.claude/skills/square-pos/`.
+
 ## Does the pipeline work?
 
 ```bash

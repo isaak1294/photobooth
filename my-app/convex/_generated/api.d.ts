@@ -12,6 +12,8 @@ import type * as captureStatus from "../captureStatus.js";
 import type * as captures from "../captures.js";
 import type * as http from "../http.js";
 import type * as identity from "../identity.js";
+import type * as paymentConfig from "../paymentConfig.js";
+import type * as payments from "../payments.js";
 import type * as printJobs from "../printJobs.js";
 import type * as printStatus from "../printStatus.js";
 import type * as renders from "../renders.js";
@@ -30,6 +32,8 @@ declare const fullApi: ApiFromModules<{
   captures: typeof captures;
   http: typeof http;
   identity: typeof identity;
+  paymentConfig: typeof paymentConfig;
+  payments: typeof payments;
   printJobs: typeof printJobs;
   printStatus: typeof printStatus;
   renders: typeof renders;

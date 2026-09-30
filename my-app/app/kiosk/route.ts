@@ -90,7 +90,7 @@ function render({ shots, demo }: { shots: number; demo: boolean }): string {
     <div class="nudge">
       <button id="start" class="start" type="button" disabled>
         <span id="start-title" class="start-title display">Warming up…</span>
-        <span class="start-sub">${shots} SHOTS · 3-2-1 EACH TIME</span>
+        <span id="start-sub" class="start-sub">${shots} SHOTS · 3-2-1 EACH TIME</span>
       </button>
     </div>
     <p class="hint">You’ll get a QR at the end — scan it and every photo lands on your phone.</p>

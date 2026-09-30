@@ -16,7 +16,13 @@
    writes the last frame of a 4-frame burst it drops a print job on its local
    spool (scripts/pi-listener.mjs → pi/booth_print_agent.py), before it even
    uploads — so the strips print automatically, with no request from here. The
-   handoff screen then polls the agent's status report to say when they're out. */
+   handoff screen then polls the agent's status report to say when they're out.
+
+   Paying: when the session mint comes back with a `price`, Start stays disabled
+   as "Pay at the counter" and the idle screen polls /kiosk/api/state until
+   `paid` flips. The charge itself happens on the operator's phone (/pay, Square
+   POS + Reader) — this iPad can't run Square POS — and the server refuses the
+   shutter for an unpaid session anyway, so the disabled button is only UX. */
 (function () {
   'use strict';
 
@@ -33,6 +39,7 @@
   var FLY_MS = 450; // ...then shrinking into its strip slot
   var POLL_MS = 500;
   var PRINT_POLL_MS = 2000;
+  var PAY_POLL_MS = 2000;
   var STAGE_TIMEOUT_MS = 20000; // per Pi stage; a silent listener fails visibly
 
   function $(id) {
@@ -52,6 +59,7 @@
     },
     start: $('start'),
     startTitle: $('start-title'),
+    startSub: $('start-sub'),
     themes: $('themes'),
     pipsLabel: $('pips-label'),
     pips: $('pips'),
@@ -117,6 +125,7 @@
     var capture = null;
     var photos = [];
     var print = null;
+    var paidAt = 0;
     var pending = [];
     function at(ms, fn) {
       pending.push(setTimeout(fn, ms));
@@ -128,6 +137,8 @@
         capture = null;
         photos = [];
         print = null;
+        // The simulated till taps a card a few seconds after the mint.
+        paidAt = Date.now() + 4000;
         return api('/kiosk/api/session?demo=1', { method: 'POST' });
       },
       // Mirrors the Pi with COUNTDOWN_MS=0: claim, ~1.5s to the shutter, upload.
@@ -160,7 +171,7 @@
         return Promise.resolve(id);
       },
       getState: function () {
-        return Promise.resolve({ capture: capture, photos: photos.filter(Boolean), print: print });
+        return Promise.resolve({ paid: Date.now() >= paidAt, capture: capture, photos: photos.filter(Boolean), print: print });
       },
     };
   })();
@@ -196,15 +207,17 @@
   var burstId = null; // one per run of SHOTS; a retried shot re-sends it
   var run = null; // { shot, requestId, startedAt, sent, status, landed }
   var strip = []; // url per landed shot, by slot
-  var timers = { tick: null, poll: null, stage: null, hold: null, print: null };
+  var timers = { tick: null, poll: null, stage: null, hold: null, print: null, pay: null };
+  var START_SUB = el.startSub.textContent; // "4 SHOTS · 3-2-1 EACH TIME", restored once paid
 
   function clearTimers() {
     clearInterval(timers.tick);
     clearInterval(timers.poll);
     clearInterval(timers.print);
+    clearInterval(timers.pay);
     clearTimeout(timers.stage);
     clearTimeout(timers.hold);
-    timers.tick = timers.poll = timers.print = timers.stage = timers.hold = null;
+    timers.tick = timers.poll = timers.print = timers.pay = timers.stage = timers.hold = null;
   }
 
   function mintBurstId() {
@@ -240,14 +253,15 @@
     selectTheme(cfg.theme || 'thunderfest');
     el.start.disabled = true;
     el.startTitle.textContent = 'Warming up…';
+    el.startSub.textContent = START_SUB;
     setScreen('idle');
 
     booth.createSession().then(
       function (minted) {
         if (mine !== generation) return;
         session = minted;
-        el.start.disabled = false;
-        el.startTitle.textContent = 'Take Photos';
+        if (minted.price && minted.price.cents > 0) lockForPayment(minted.price);
+        else unlockStart();
         el.chipCode.textContent = minted.shortCode;
         el.chipCode.hidden = false;
         el.qr.src = minted.qr;
@@ -256,6 +270,47 @@
       function (error) {
         console.error('[kiosk] could not start a session:', error);
         if (mine === generation) setScreen('offline');
+      },
+    );
+  }
+
+  // --- paying ---------------------------------------------------------------------
+
+  function money(price) {
+    var n = (price.cents / 100).toFixed(2);
+    return price.currency === 'USD' ? '$' + n : n + ' ' + price.currency;
+  }
+
+  // Start stays disabled until /kiosk/api/state says the session is paid. The
+  // operator charges on their phone; the chip's code is how they find us.
+  function lockForPayment(price) {
+    el.start.disabled = true;
+    el.startTitle.textContent = 'Pay at the counter';
+    el.startSub.textContent = money(price) + ' · ' + START_SUB;
+    pollPaid();
+    timers.pay = setInterval(pollPaid, PAY_POLL_MS);
+  }
+
+  function unlockStart() {
+    clearInterval(timers.pay);
+    timers.pay = null;
+    el.start.disabled = false;
+    el.startTitle.textContent = 'Take Photos';
+    el.startSub.textContent = START_SUB;
+  }
+
+  function pollPaid() {
+    if (!session || run) return;
+    var mine = generation;
+    booth.getState(session.token).then(
+      function (state) {
+        if (mine !== generation || run) return;
+        el.chipReconnect.hidden = true;
+        if (state.paid) unlockStart();
+      },
+      function (error) {
+        console.warn('[kiosk] paid poll failed:', error);
+        el.chipReconnect.hidden = false;
       },
     );
   }

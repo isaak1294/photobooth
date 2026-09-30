@@ -1,6 +1,7 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import { captureStatus, ACTIVE_CAPTURE_STATUSES } from './captureStatus';
+import { isSessionPaid, paymentConfig } from './paymentConfig';
 
 // PHONE/KIOSK -> writes the shutter signal. Called by the Take Picture button.
 // Rejects if this session already has a capture in flight, so a double-tap (or
@@ -32,6 +33,13 @@ export const requestCapture = mutation({
       .withIndex('by_token', (q) => q.eq('token', token))
       .unique();
     if (session === null) throw new ConvexError('Unknown session token');
+
+    // Enforce payment HERE, not only in the kiosk's disabled button: this is the
+    // one mutation every shutter (kiosk, phone) goes through. With no price
+    // configured the check is skipped and the booth is free, as before.
+    if (paymentConfig().priceCents > 0 && !(await isSessionPaid(ctx.db, session._id))) {
+      throw new ConvexError('This session has not been paid for yet');
+    }
 
     const existing = await ctx.db
       .query('captureRequests')
