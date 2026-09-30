@@ -26,7 +26,12 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3210 --max-time 3)",
       "Bash(npx tsc *)",
       "Bash(curl -s -o /dev/null -w \"3200 now: %{http_code}\\\\n\" --max-time 3 http://127.0.0.1:3200)",
-      "Bash(ps -o ppid= -p 571942)"
+      "Bash(ps -o ppid= -p 571942)",
+      "Bash(docker context *)",
+      "Bash(docker info *)",
+      "Bash(docker --context default info --format '{{.OperatingSystem}} / {{.ServerVersion}}')",
+      "Bash(systemctl is-active *)",
+      "Bash(systemctl --user is-active docker-desktop)"
     ]
   }
 }

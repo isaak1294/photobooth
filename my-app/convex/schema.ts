@@ -95,6 +95,42 @@ export default defineSchema({
     error: v.optional(v.string()),
   }).index('by_session', ['sessionId']),
 
+  // One guest's payment for one session, taken on the operator's phone through
+  // the Square Point of Sale app (Square POS API) and the Reader. The POS API
+  // hands us back an order id in a browser callback; nothing here is trusted
+  // until `payments.recordPosResult` has fetched that order from Square and
+  // checked the amount, location and tender. This row is both the audit trail
+  // and the idempotency key: an order id is consumed exactly once.
+  //
+  // `paid`       — verified against Square's Orders API.
+  // `unverified` — a cash/offline tender: Square returns no order id for those,
+  //                so the operator's device is the only witness. Only written
+  //                when SQUARE_ALLOW_CASH=1.
+  // `failed`     — cancelled in Square POS, a POS error, or verification failed
+  //                (`error` says which). A later successful charge overwrites it.
+  // `refunded`   — reserved for a refund webhook; nothing writes it yet.
+  payments: defineTable({
+    sessionId: v.id('sessions'),
+    status: v.union(v.literal('paid'), v.literal('unverified'), v.literal('failed'), v.literal('refunded')),
+    // Smallest currency unit (cents for USD), as Square reports it.
+    amount: v.number(),
+    currency: v.string(),
+    // Square tender type(s) on the order, e.g. "CARD". Absent on failures.
+    tender: v.optional(v.string()),
+    // The POS API's transaction_id, which IS a Square Order id. Absent for cash.
+    squareOrderId: v.optional(v.string()),
+    // order.tenders[].payment_id — what the Refunds API wants.
+    squarePaymentIds: v.optional(v.array(v.string())),
+    // Square POS's device-minted id; the only id a cash tender carries.
+    clientTransactionId: v.optional(v.string()),
+    // POS error_code, or why verification rejected the order. Visible in the
+    // dashboard so a "why won't it unlock" at the table has an answer.
+    error: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index('by_session', ['sessionId'])
+    .index('by_order', ['squareOrderId']),
+
   // One printed sheet: four frames of a burst, laid out as two identical strips
   // with a single centre cut. WRITE-ONLY FROM THE PI.
   //

@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 import { mutation, query, internalMutation } from './_generated/server';
 import { captureStatus } from './captureStatus';
 import { printStatus } from './printStatus';
+import { isSessionPaid, paymentConfig } from './paymentConfig';
 
 // Create a new booth run. The `token` is a random string carried in the QR link
 // — never a sequential id, so a stale QR from a test run can't surface someone
@@ -34,6 +35,9 @@ export const getSession = query({
     v.object({
       sessionId: v.id('sessions'),
       shortCode: v.string(),
+      // Square: whether this session may shoot. Always true while payments are
+      // off (no SQUARE_PRICE_CENTS), so surfaces need no special case for that.
+      paid: v.boolean(),
       // The latest capture request for this session, so the phone can watch the
       // Pi's real progress (counting down → capturing → uploading → complete).
       capture: v.union(
@@ -161,7 +165,9 @@ export const getSession = query({
         }
       : null;
 
-    return { sessionId: session._id, shortCode: session.shortCode, capture, photos, renders, print };
+    const paid = paymentConfig().priceCents === 0 || (await isSessionPaid(ctx.db, session._id));
+
+    return { sessionId: session._id, shortCode: session.shortCode, paid, capture, photos, renders, print };
   },
 });
 

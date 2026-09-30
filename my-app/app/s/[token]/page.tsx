@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PopBackdrop } from '@/components/PopBackdrop';
 import { CapturePanel, STRIP_SHOTS, type CapturePhase } from '@/components/phone/CapturePanel';
@@ -126,7 +127,9 @@ function LivePhone() {
         burstRef.current.remaining = 0;
         setBurstInfo(null);
         setPressState(null);
-        setRequestError("We couldn't reach the booth.");
+        // A ConvexError carries the mutation's real reason ("not paid for yet",
+        // "capture already in progress"); anything else is the network.
+        setRequestError(error instanceof ConvexError ? String(error.data) : "We couldn't reach the booth.");
       }
     },
     [requestCapture, token],
