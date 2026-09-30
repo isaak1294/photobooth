@@ -10,6 +10,14 @@
 //
 // Shots default to 4; ?shots=N (1-8) overrides. ?demo=1 (or NEXT_PUBLIC_NOBOOTH)
 // runs the whole loop against a simulated booth.
+//
+// Paying: with a price set on Convex, the Start button opens Square POS on this
+// same iPad (Square's Point of Sale API — the iPad must run iPadOS 17.1+ with
+// Square POS signed in and the Reader paired, and the kiosk must be a Safari
+// tab, not a Home-Screen app, since that's where Square returns to). Square
+// comes back through /pay/callback, which redirects here as
+// /kiosk?resume=<token>&result=paid|failed[&error=…]&shots=N&theme=T — a fresh
+// page load that re-adopts the guest's session and starts the countdown.
 
 const DEFAULT_SHOTS = 4;
 const MAX_SHOTS = 8;
@@ -30,21 +38,82 @@ const DEFAULT_THEME = 'thunderfest';
 
 export const dynamic = 'force-dynamic';
 
+type Config = {
+  shots: number;
+  demo: boolean;
+  theme: string;
+  // /prepaid-kiosk: sessions are minted prepaid, so no price and no Square.
+  prepaid: boolean;
+  // The prepaid key, echoed to the session mint; null when none is required.
+  key: string | null;
+  // Set only on the way back from Square POS (see the header comment).
+  resume: string | null;
+  resumeTheme: string | null;
+  result: string | null;
+  error: string | null;
+  // Public Square identifiers for the deep link; null with no Application ID.
+  square: { applicationId: string; locationId: string } | null;
+};
+
 export function GET(request: Request) {
+  return kioskPage(request, { prepaid: false });
+}
+
+// Also serves /prepaid-kiosk (app/prepaid-kiosk/route.ts): the same document,
+// flagged so the page mints prepaid sessions and never shows a price.
+export function kioskPage(request: Request, { prepaid }: { prepaid: boolean }) {
   const params = new URL(request.url).searchParams;
+  // A prepaid kiosk is gated by KIOSK_PREPAID_KEY when that is set: the key
+  // rides in the URL the operator bookmarks (?key=…) and is checked again by
+  // the session mint. Without the env var, the page is open.
+  const requiredKey = process.env.KIOSK_PREPAID_KEY;
+  const key = params.get('key');
+  if (prepaid && requiredKey && key !== requiredKey) {
+    return new Response('This kiosk needs ?key=… (KIOSK_PREPAID_KEY).', {
+      status: 403,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
   const requested = Number(params.get('shots'));
   const shots = Number.isInteger(requested) && requested >= 1 && requested <= MAX_SHOTS ? requested : DEFAULT_SHOTS;
   const demo = params.get('demo') === '1' || process.env.NEXT_PUBLIC_NOBOOTH === '1';
 
-  return new Response(render({ shots, demo }), {
+  // Everything below comes from the request, so it is validated to a strict
+  // shape before it is serialised into the page.
+  const rawResume = params.get('resume');
+  const resume = rawResume !== null && /^[0-9a-f-]{36}$|^demo$/.test(rawResume) ? rawResume : null;
+  const rawTheme = params.get('theme');
+  const resumeTheme = rawTheme !== null && THEMES.some((t) => t.key === rawTheme) ? rawTheme : null;
+  const rawResult = params.get('result');
+  const result = rawResult !== null && ['paid', 'unverified', 'failed'].includes(rawResult) ? rawResult : null;
+  const rawError = params.get('error');
+  const error = rawError !== null ? rawError.replace(/[^\w .,:;()'-]/g, '').slice(0, 200) || null : null;
+
+  const applicationId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID ?? '';
+  const square = applicationId ? { applicationId, locationId: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID ?? '' } : null;
+
+  const config: Config = {
+    shots,
+    demo,
+    theme: DEFAULT_THEME,
+    prepaid,
+    key: prepaid && requiredKey ? requiredKey : null,
+    resume,
+    resumeTheme,
+    result,
+    error,
+    square: prepaid ? null : square,
+  };
+  return new Response(render(config), {
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
 
-function render({ shots, demo }: { shots: number; demo: boolean }): string {
-  // Numbers, a boolean and hard-coded slugs go into the page; nothing from the
-  // request, so no escaping is needed.
-  const config = JSON.stringify({ shots, demo, theme: DEFAULT_THEME });
+function render(cfg: Config): string {
+  const { shots } = cfg;
+  // `<` is escaped so no validated-but-request-derived string can close the
+  // script element.
+  const config = JSON.stringify(cfg).replace(/</g, '\\u003c');
   const themeChips = THEMES.map(
     (t) =>
       `<button type="button" class="theme${t.key === DEFAULT_THEME ? ' is-selected' : ''}" data-theme="${t.key}" ` +
@@ -93,7 +162,8 @@ function render({ shots, demo }: { shots: number; demo: boolean }): string {
         <span id="start-sub" class="start-sub">${shots} SHOTS · 3-2-1 EACH TIME</span>
       </button>
     </div>
-    <p class="hint">You’ll get a QR at the end — scan it and every photo lands on your phone.</p>
+    <p id="pay-note" class="pay-note" hidden role="status"></p>
+    <p class="hint">${cfg.prepaid ? 'Photos are on the house tonight. ' : ''}You’ll get a QR at the end — scan it and every photo lands on your phone.</p>
   </section>
 
   <section id="screen-shoot" class="screen shoot" hidden>

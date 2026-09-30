@@ -215,6 +215,29 @@ body {
   font-size: 2.4vmin;
 }
 
+/* Payment status under the button: "Opening Square…", "Paid ✓", or why not. */
+.pay-note {
+  max-width: 84vmin;
+  margin: 3vmin 0 0;
+  padding: 1.4vmin 2.6vmin;
+  border: 3px solid #000;
+  background: #fff;
+  text-align: center;
+  font-size: 2.6vmin;
+  font-weight: 700;
+  box-shadow: 4px 4px 0 0 #000;
+}
+.pay-note.is-good {
+  background: #a8ff60;
+}
+.pay-note.is-bad {
+  background: #ff2d95;
+  color: #fff;
+}
+.pay-note.is-busy {
+  animation: kiosk-pulse 1.2s ease-in-out infinite;
+}
+
 /* --- shooting --------------------------------------------------------------- */
 .shoot {
   justify-content: space-between;

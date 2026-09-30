@@ -37,7 +37,7 @@ export const requestCapture = mutation({
     // Enforce payment HERE, not only in the kiosk's disabled button: this is the
     // one mutation every shutter (kiosk, phone) goes through. With no price
     // configured the check is skipped and the booth is free, as before.
-    if (paymentConfig().priceCents > 0 && !(await isSessionPaid(ctx.db, session._id))) {
+    if (paymentConfig().priceCents > 0 && !(await isSessionPaid(ctx.db, session))) {
       throw new ConvexError('This session has not been paid for yet');
     }
 

@@ -9,6 +9,7 @@ import {
   androidPosUrl,
   describePosError,
   detectPosPlatform,
+  encodePosState,
   formatMoney,
   iosPosUrl,
   type PosPlatform,
@@ -87,7 +88,8 @@ function Pay() {
 
   const callbackUrl = origin ? `${origin}/pay/callback` : null;
   const httpsOk = callbackUrl !== null && callbackUrl.startsWith('https://');
-  const ready = config !== undefined && config.priceCents > 0 && APPLICATION_ID !== '' && httpsOk && platform !== 'other';
+  const ready =
+    config !== undefined && config.priceCents > 0 && APPLICATION_ID !== '' && httpsOk && platform !== 'other';
 
   function charge(sessionId: Id<'sessions'>, shortCode: string) {
     if (!config || !callbackUrl) return;
@@ -96,7 +98,7 @@ function Pay() {
       amountCents: config.priceCents,
       currency: config.currency,
       callbackUrl,
-      state: sessionId,
+      state: encodePosState({ surface: 'pay', sessionId }),
       note: `Photobooth ${shortCode}`,
       locationId: LOCATION_ID,
       allowCash: config.cashAllowed,
@@ -139,27 +141,28 @@ function Pay() {
         <p className="font-bold">Loading…</p>
       ) : config.priceCents === 0 ? (
         <Notice tone="paper" title="Payments are off">
-          Set <code className="font-mono">SQUARE_PRICE_CENTS</code> on the Convex deployment (e.g. 500 for $5) to
-          turn them on. The kiosk shoots for free until then.
+          Set <code className="font-mono">SQUARE_PRICE_CENTS</code> on the Convex deployment (e.g. 500 for $5) to turn
+          them on. The kiosk shoots for free until then.
         </Notice>
       ) : (
         <>
           {APPLICATION_ID === '' && (
             <Notice tone="pink" title="No Square Application ID">
-              Set <code className="font-mono">NEXT_PUBLIC_SQUARE_APPLICATION_ID</code> in <code className="font-mono">.env.local</code> and restart{' '}
-              <code className="font-mono">next dev</code>.
+              Set <code className="font-mono">NEXT_PUBLIC_SQUARE_APPLICATION_ID</code> in{' '}
+              <code className="font-mono">.env.local</code> and restart <code className="font-mono">next dev</code>.
             </Notice>
           )}
           {!config.verifiable && (
             <Notice tone="pink" title="Deployment can’t verify orders">
-              <code className="font-mono">SQUARE_ACCESS_TOKEN</code> and <code className="font-mono">SQUARE_LOCATION_ID</code> must be set on
-              Convex, or every charge will be recorded as failed.
+              <code className="font-mono">SQUARE_ACCESS_TOKEN</code> and{' '}
+              <code className="font-mono">SQUARE_LOCATION_ID</code> must be set on Convex, or every charge will be
+              recorded as failed.
             </Notice>
           )}
           {callbackUrl !== null && !httpsOk && (
             <Notice tone="pink" title="Not HTTPS">
-              Square only calls back to an HTTPS URL. This page is at <code className="font-mono">{origin}</code>; open the deployed
-              host (or a tunnel) on this phone instead.
+              Square only calls back to an HTTPS URL. This page is at <code className="font-mono">{origin}</code>; open
+              the deployed host (or a tunnel) on this phone instead.
             </Notice>
           )}
           {platform === 'other' && (
@@ -179,7 +182,7 @@ function Pay() {
               <li className="font-bold">No sessions yet — the kiosk mints one when it boots.</li>
             )}
             {sessions?.map((s) => {
-              const settled = s.payment?.status === 'paid' || s.payment?.status === 'unverified';
+              const settled = s.prepaid || s.payment?.status === 'paid' || s.payment?.status === 'unverified';
               const isLaunching = launching === s.shortCode;
               return (
                 <li
@@ -196,7 +199,7 @@ function Pay() {
                     </div>
                     {settled ? (
                       <span className="font-display text-xl uppercase">
-                        {s.payment?.status === 'unverified' ? 'Cash ✓' : 'Paid ✓'}
+                        {s.prepaid ? 'Prepaid' : s.payment?.status === 'unverified' ? 'Cash ✓' : 'Paid ✓'}
                       </span>
                     ) : (
                       <button
@@ -221,8 +224,8 @@ function Pay() {
 
           {callbackUrl && (
             <p className="mt-8 text-xs font-bold opacity-70">
-              Registered Web Callback URL must be exactly <code className="font-mono">{callbackUrl}</code> (Square Developer
-              Console → your app → Point of Sale API → Web).
+              Registered Web Callback URL must be exactly <code className="font-mono">{callbackUrl}</code> (Square
+              Developer Console → your app → Point of Sale API → Web).
             </p>
           )}
         </>
@@ -246,7 +249,15 @@ function ResultBanner({ result, code, error }: Result) {
   );
 }
 
-function Notice({ tone, title, children }: { tone: 'lime' | 'pink' | 'paper'; title: string; children: React.ReactNode }) {
+function Notice({
+  tone,
+  title,
+  children,
+}: {
+  tone: 'lime' | 'pink' | 'paper';
+  title: string;
+  children: React.ReactNode;
+}) {
   const bg = tone === 'lime' ? 'bg-pop-lime' : tone === 'pink' ? 'bg-pop-pink text-pop-paper' : 'bg-pop-paper';
   return (
     <div role={tone === 'pink' ? 'alert' : 'status'} className={`mb-4 border-4 border-pop-ink p-4 shadow-pop-md ${bg}`}>

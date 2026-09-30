@@ -42,6 +42,7 @@ export const recentSessions = query({
       sessionId: v.id('sessions'),
       shortCode: v.string(),
       createdAt: v.number(),
+      prepaid: v.boolean(),
       payment: v.union(
         v.null(),
         v.object({ status: paymentStatus, error: v.union(v.string(), v.null()), updatedAt: v.number() }),
@@ -65,7 +66,10 @@ export const recentSessions = query({
         sessionId: session._id,
         shortCode: session.shortCode,
         createdAt: session._creationTime,
-        payment: payment ? { status: payment.status, error: payment.error ?? null, updatedAt: payment.updatedAt } : null,
+        prepaid: session.prepaid === true,
+        payment: payment
+          ? { status: payment.status, error: payment.error ?? null, updatedAt: payment.updatedAt }
+          : null,
         photos: photos.length,
       });
     }
@@ -93,7 +97,8 @@ export const recordPosResult = action({
     });
     if (session === null) throw new ConvexError('Unknown session');
     const cfg = paymentConfig();
-    if (cfg.priceCents === 0) throw new ConvexError('Payments are off: SQUARE_PRICE_CENTS is not set on the deployment');
+    if (cfg.priceCents === 0)
+      throw new ConvexError('Payments are off: SQUARE_PRICE_CENTS is not set on the deployment');
 
     const record = async (fields: {
       status: 'paid' | 'unverified' | 'failed';
@@ -119,7 +124,10 @@ export const recordPosResult = action({
     // Cash / offline: Square returns no order id, so there is nothing to verify.
     if (args.orderId === undefined || args.orderId === '') {
       if (cfg.cashAllowed) return await record({ status: 'unverified', tender: 'CASH' });
-      return await record({ status: 'failed', error: 'Cash or offline tender is not accepted (SQUARE_ALLOW_CASH is unset)' });
+      return await record({
+        status: 'failed',
+        error: 'Cash or offline tender is not accepted (SQUARE_ALLOW_CASH is unset)',
+      });
     }
 
     try {
@@ -168,7 +176,10 @@ async function verifyPosOrder(orderId: string, expectCents: number, expectCurren
   const res = await fetch(`${SQUARE_API}/orders/${orderId}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   });
-  const body = (await res.json().catch(() => ({}))) as { order?: SquareOrder; errors?: { code?: string; detail?: string }[] };
+  const body = (await res.json().catch(() => ({}))) as {
+    order?: SquareOrder;
+    errors?: { code?: string; detail?: string }[];
+  };
   if (res.status === 404) throw new Error('Square has no order with that id');
   if (!res.ok) {
     const detail = (body.errors ?? []).map((e) => `${e.code ?? '?'}${e.detail ? `: ${e.detail}` : ''}`).join('; ');
@@ -176,7 +187,8 @@ async function verifyPosOrder(orderId: string, expectCents: number, expectCurren
   }
   const order = body.order;
   if (!order) throw new Error('Square returned no order');
-  if (order.state !== 'COMPLETED') throw new Error(`Square order is ${order.state ?? 'in an unknown state'}, not COMPLETED`);
+  if (order.state !== 'COMPLETED')
+    throw new Error(`Square order is ${order.state ?? 'in an unknown state'}, not COMPLETED`);
   if (order.location_id !== locationId) throw new Error('Square order belongs to a different location');
 
   const amount = Number(order.total_money?.amount ?? NaN);

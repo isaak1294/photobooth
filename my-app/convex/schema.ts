@@ -14,6 +14,9 @@ export default defineSchema({
     token: v.string(),
     // Short human-readable code shown under the QR (e.g. "PB-4821").
     shortCode: v.string(),
+    // Minted by /prepaid-kiosk: the event is paid for up front, so this session
+    // may shoot with no `payments` row even while SQUARE_PRICE_CENTS is set.
+    prepaid: v.optional(v.boolean()),
   }).index('by_token', ['token']),
 
   // A captured frame. The image bytes live in Convex file storage; we keep the
