@@ -45,3 +45,10 @@ scp -r ming@photo-pi.local:'~/ai-photobooth/booth/' ~/Desktop/
 curl -fsSL https://raw.githubusercontent.com/isaak1294/photobooth/main/pi/deploy-to-pi.sh | bash
 sudo systemctl restart booth-print 
 journalctl -u booth-print -f
+
+## just take photo 
+rpicam-still -o ~/test.jpg -t 2000 -n
+
+## download to mac
+scp ming@photo-pi.local:~/test.jpg ~/Desktop/
+open ~/Desktop/test.jpg
