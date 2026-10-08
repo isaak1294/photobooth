@@ -111,8 +111,8 @@ class StripLayout:
 
     photos: int = 4
     # Inset of photos and footer from the strip's left/right edges. Top and
-    # bottom follow it unless set — borderless printers crop unevenly, so the
-    # top usually needs more (see BOOTH_MARGIN_TOP_MM and --calibrate).
+    # bottom follow it unless set. This is the border you SEE on the finished
+    # strip — what the printer crops off is SheetLayout's overscan, not this.
     outer_margin_mm: float = 2.5
     margin_top_mm: float | None = None
     margin_bottom_mm: float | None = None
@@ -226,28 +226,34 @@ def layout_from_env() -> StripLayout:
         raise SystemExit(f"BOOTH_THEME={name!r} is not one of: {', '.join(THEMES)}") from None
 
 
-def _with_env_margin(layout: StripLayout) -> StripLayout:
-    """Apply the margin overrides: BOOTH_OUTER_MARGIN_MM for the sides (and top
-    and bottom unless they are set), BOOTH_MARGIN_TOP_MM, BOOTH_MARGIN_BOTTOM_MM.
-
-    Borderless dye-sub OVERSCANS — the printer enlarges the image a few percent
-    so colour reaches the paper edge — which crops that much off every side,
-    and not evenly: the SELPHY loses more off the top than the bottom. The
-    background survives that unseen; a photo or the footer 2.5mm from the edge
-    does not. Print one `--calibrate` sheet and read the numbers off it."""
-    changes: dict[str, float] = {}
-    for env, field_name in (
-        ("BOOTH_OUTER_MARGIN_MM", "outer_margin_mm"),
-        ("BOOTH_MARGIN_TOP_MM", "margin_top_mm"),
-        ("BOOTH_MARGIN_BOTTOM_MM", "margin_bottom_mm"),
-    ):
+def _env_mm(names: Sequence[tuple[str, str]]) -> dict[str, float]:
+    """{field: value} for each (ENV_VAR, field) pair whose variable is set. A
+    value that isn't a number is a loud failure at startup."""
+    values: dict[str, float] = {}
+    for env, field_name in names:
         raw = os.environ.get(env)
         if not raw:
             continue
         try:
-            changes[field_name] = float(raw)
+            values[field_name] = float(raw)
         except ValueError:
             raise SystemExit(f"{env}={raw!r} is not a number") from None
+    return values
+
+
+def _with_env_margin(layout: StripLayout) -> StripLayout:
+    """Apply the margin overrides: BOOTH_OUTER_MARGIN_MM for the sides (and top
+    and bottom unless they are set), BOOTH_MARGIN_TOP_MM, BOOTH_MARGIN_BOTTOM_MM.
+
+    These are design choices — the visible border on the finished strip. Don't
+    use them to dodge printer cropping: they apply at the centre cut too, so
+    widening them for the paper edge leaves every strip off-centre once it's
+    cut. Measured cropping goes in BOOTH_OVERSCAN_* (see sheet_layout_from_env)."""
+    changes = _env_mm((
+        ("BOOTH_OUTER_MARGIN_MM", "outer_margin_mm"),
+        ("BOOTH_MARGIN_TOP_MM", "margin_top_mm"),
+        ("BOOTH_MARGIN_BOTTOM_MM", "margin_bottom_mm"),
+    ))
     return replace(layout, **changes) if changes else layout
 
 
@@ -258,6 +264,28 @@ class SheetLayout:
     strips_per_sheet: int = 2          # 2 = duplicate + single centre cut
     draw_cut_marks: bool = True        # short ticks at the sheet edges only
     cut_mark_mm: float = 3.0
+    # How much of the canvas the printer crops off each edge. Borderless dye-sub
+    # OVERSCANS — it enlarges the image a few percent so colour reaches the
+    # paper edge — and the bordered size clips to hard margins instead; either
+    # way, and not necessarily evenly, that much never reaches the paper. Read
+    # these straight off a `--calibrate` print. The strips are laid out inside
+    # what survives, so their margins are measured from the real paper edge and
+    # the cut marks land mid-paper.
+    overscan_top_mm: float = 0.0
+    overscan_bottom_mm: float = 0.0
+    overscan_left_mm: float = 0.0
+    overscan_right_mm: float = 0.0
+
+
+def sheet_layout_from_env() -> SheetLayout:
+    """The sheet layout with this printer's measured overscan from
+    BOOTH_OVERSCAN_TOP_MM, _BOTTOM_MM, _LEFT_MM and _RIGHT_MM. Unset is 0."""
+    return SheetLayout(**_env_mm((
+        ("BOOTH_OVERSCAN_TOP_MM", "overscan_top_mm"),
+        ("BOOTH_OVERSCAN_BOTTOM_MM", "overscan_bottom_mm"),
+        ("BOOTH_OVERSCAN_LEFT_MM", "overscan_left_mm"),
+        ("BOOTH_OVERSCAN_RIGHT_MM", "overscan_right_mm"),
+    )))
 
 
 def _load_font(size_px: int) -> ImageFont.FreeTypeFont:
@@ -421,31 +449,42 @@ def build_sheet(
     sheet_layout = sheet_layout or SheetLayout()
 
     sheet_w, sheet_h = sheet_px
-    column_w = sheet_w // sheet_layout.strips_per_sheet
+    # The part of the canvas that reaches paper. Everything outside it is bleed.
+    left = mm_to_px(sheet_layout.overscan_left_mm)
+    top = mm_to_px(sheet_layout.overscan_top_mm)
+    visible_w = sheet_w - left - mm_to_px(sheet_layout.overscan_right_mm)
+    visible_h = sheet_h - top - mm_to_px(sheet_layout.overscan_bottom_mm)
+    column_w = visible_w // sheet_layout.strips_per_sheet
 
-    strip = build_strip(photos, column_w, sheet_h, strip_layout)
+    strip = build_strip(photos, column_w, visible_h, strip_layout)
 
+    # The bleed carries the strip background, so a crop a hair short of the
+    # measured one shows more of the same colour rather than a white sliver.
     sheet = Image.new("RGB", (sheet_w, sheet_h), strip_layout.background)
     for i in range(sheet_layout.strips_per_sheet):
-        sheet.paste(strip, (i * column_w, 0))
+        sheet.paste(strip, (left + i * column_w, top))
 
     if sheet_layout.draw_cut_marks and sheet_layout.strips_per_sheet > 1:
         draw = ImageDraw.Draw(sheet)
         tick = mm_to_px(sheet_layout.cut_mark_mm)
+        bottom = top + visible_h
         for i in range(1, sheet_layout.strips_per_sheet):
-            x = i * column_w
-            draw.line([(x, 0), (x, tick)], fill=(140, 140, 140), width=2)
-            draw.line([(x, sheet_h - tick), (x, sheet_h)], fill=(140, 140, 140), width=2)
+            x = left + i * column_w
+            # Run each tick through the bleed from the canvas edge, so cut_mark_mm
+            # of it is still on the paper after the crop.
+            draw.line([(x, 0), (x, top + tick)], fill=(140, 140, 140), width=2)
+            draw.line([(x, bottom - tick), (x, sheet_h)], fill=(140, 140, 140), width=2)
 
     return sheet
 
 
 def build_calibration_sheet(sheet_px: tuple[int, int], max_mm: int = 12) -> Image.Image:
     """A sheet of nested rectangles, one per millimetre in from the paper edge,
-    each labelled on all four sides with its inset. Print it borderless and the
-    outermost line still visible on a side IS that side's overscan in mm — set
-    the margins a couple of mm beyond it. Drawn black on white so the answer
-    reads under any light, with the centre cut line for good measure."""
+    each labelled on all four sides with its inset. Print it on the booth's
+    page size and the outermost line still visible on a side IS that side's
+    overscan in mm: it goes straight into BOOTH_OVERSCAN_<SIDE>_MM. Drawn black
+    on white so the answer reads under any light, with the centre cut line for
+    good measure. Never apply overscan here — this is what measures it."""
     w, h = sheet_px
     sheet = Image.new("RGB", (w, h), (255, 255, 255))
     draw = ImageDraw.Draw(sheet)
@@ -599,7 +638,7 @@ class PrintTask:
     # Carried so the status callback can report to Convex without a lookup.
     token: str = ""
     strip_layout: StripLayout = field(default_factory=layout_from_env)
-    sheet_layout: SheetLayout = field(default_factory=SheetLayout)
+    sheet_layout: SheetLayout = field(default_factory=sheet_layout_from_env)
     attempts: int = 0
 
     @property
@@ -788,7 +827,8 @@ def main() -> None:
     parser.add_argument(
         "--calibrate",
         action="store_true",
-        help="compose a margin-calibration sheet instead of strips (print it borderless, read the overscan off it)",
+        help="compose an overscan-calibration sheet instead of strips (print it on the booth's page size, "
+        "read BOOTH_OVERSCAN_*_MM off it)",
     )
     parser.add_argument("--print", dest="do_print", action="store_true")
     args = parser.parse_args()
@@ -799,15 +839,16 @@ def main() -> None:
     if args.calibrate:
         sheet = build_calibration_sheet(sheet_px)
     else:
-        # Same margin env vars the print agent honours, so a CLI test print
-        # matches what the booth will produce.
+        # Same margin and overscan env vars the print agent honours, so a CLI
+        # test print matches what the booth will produce.
         strip_layout = _with_env_margin(THEMES[args.theme])
         photos = (
             [Image.open(p) for p in args.photos]
             if args.photos
             else [_placeholder(i) for i in range(strip_layout.photos)]
         )
-        sheet = build_sheet(photos, sheet_px, strip_layout, SheetLayout(strips_per_sheet=args.strips))
+        sheet_layout = replace(sheet_layout_from_env(), strips_per_sheet=args.strips)
+        sheet = build_sheet(photos, sheet_px, strip_layout, sheet_layout)
     pdf = sheet_to_pdf(sheet, args.out)
     sheet.save(args.out.with_suffix(".png"))
     print(f"sheet: {sheet.size[0]} x {sheet.size[1]} px -> {pdf}")

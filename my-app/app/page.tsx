@@ -6,13 +6,21 @@ export const metadata: Metadata = {
   description: 'The app surfaces, plus the four candidate product pages.',
 };
 
-// Dev index. The app itself lives at /kiosk, /booth and /s/<token>; the four
-// product pages below are the design explorations POPFLASH came out of.
+// Dev index. The app itself lives at /kiosk, /prepaid-kiosk, /booth and
+// /s/<token>; the four product pages below are the design explorations POPFLASH
+// came out of.
 const surfaces = [
   {
     href: '/kiosk',
     name: 'Kiosk',
     vibe: 'iPad on a stand — one button, four shots, QR handoff',
+  },
+  {
+    // Deliberately no ?key= here: with KIOSK_PREPAID_KEY set this link 403s,
+    // and putting the key on a public page would be the gate's whole leak.
+    href: '/prepaid-kiosk',
+    name: 'Prepaid kiosk',
+    vibe: 'Same kiosk, no payment — for events paid up front',
   },
   {
     href: '/booth',

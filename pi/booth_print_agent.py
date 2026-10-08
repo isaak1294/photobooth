@@ -61,7 +61,14 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(_HERE), str(_HERE.parent)]
 
-from photobooth_print import PrintService, PrintTask, PrintWorker, StripLayout, layout_for  # noqa: E402
+from photobooth_print import (  # noqa: E402
+    PrintService,
+    PrintTask,
+    PrintWorker,
+    StripLayout,
+    layout_for,
+    sheet_layout_from_env,
+)
 
 log = logging.getLogger("booth.agent")
 
@@ -227,6 +234,14 @@ def main() -> None:
 
     service = PrintService()
     log.info("printer=%s page_size=%s spool=%s", service.printer, service.page_size, SPOOL_ROOT)
+    # Every PrintTask re-reads this; reading it here too makes a typo in
+    # BOOTH_OVERSCAN_* fail at startup instead of on the first guest's sheet,
+    # and puts the numbers in the journal when a print comes out cropped.
+    sheet = sheet_layout_from_env()
+    log.info(
+        "overscan mm: top=%s bottom=%s left=%s right=%s",
+        sheet.overscan_top_mm, sheet.overscan_bottom_mm, sheet.overscan_left_mm, sheet.overscan_right_mm,
+    )
 
     # burstId -> the job file we hold in active/, so a terminal status can
     # retire it. The worker thread only ever hands us a PrintTask.
