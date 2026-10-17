@@ -231,44 +231,82 @@ its hard margins instead. Either way the symptom is photos nicked at the top,
 left and right while the **bottom looks fine**. The bottom is probably cropped
 too; you can't see it because the lowest ink (the footer) sits 6.5mm up, while
 photos sit 2.5mm from the other three edges. So measure rather than eyeball.
-Print one sheet of nested millimetre rulers **on the booth's page size**:
+
+### Dialling it in
+
+**1. Make sure the Pi is running the overscan code at all.** `deploy-to-pi.sh`
+pulls `main`, so a branch that hasn't been merged never reaches the Pi, and
+older code silently ignores `BOOTH_OVERSCAN_*`:
+
+```bash
+grep -c overscan_top_mm ~/ai-photobooth/booth/photobooth_print.py   # 0 = old code
+journalctl -u booth-print -b | grep 'overscan mm'                  # what the agent loaded
+```
+
+No `overscan mm:` line in the journal means old code or no restart. Run
+`deploy-to-pi.sh` with `BRANCH=<branch>`, then `sudo systemctl restart booth-print`.
+
+**2. Measure.** Print the ruler sheet **on the booth's page size**, twice:
 
 ```bash
 cd ~/ai-photobooth/booth
 python3 photobooth_print.py --calibrate --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
 ```
 
-On the print, the number on the outermost rectangle you can see along its whole
-length is that side's overscan in mm. Put the four numbers straight into
-`/etc/booth.env`, with no safety added (the strip's own 2.5mm border is the
-safety). These are the values measured on our CP1500 on 2026-09-30:
+Each edge has three rulers that count mm in from the image edge, with a tick
+every half mm. On each ruler, find the **first tick you can see whole**: a long
+numbered tick is that many mm, and a short tick is the half mm between its
+neighbours. That is the side's overscan. The sheet prints its page size and
+time in the middle, so you can tell prints apart later.
+
+- The three rulers on one side should agree. If they differ by more than a half
+  mm, the paper is feeding in crooked: reseat the cassette and print again. No
+  setting fixes a skewed feed.
+- The two sheets should agree too. If they don't, take the larger reading per
+  side. If they differ by a whole mm or more, the feed varies that much from
+  sheet to sheet. Absorb it by raising `BOOTH_OUTER_MARGIN_MM` (say to 3.5); that
+  margin is symmetric, so the strips stay centred.
+- Fold test: fold a print in half side to side. The grey centre line should sit
+  on the fold. If it's off by X mm, left and right overscan differ by 2X.
+
+**3. Set it.** Put the four readings in `/etc/booth.env` with no safety added
+(the strip's own 2.5mm border is the safety), then
+`sudo systemctl restart booth-print`. These are our CP1500's values: measured
+2026-09-30, then nudged from a test strip on 2026-10-08:
 
 ```
-BOOTH_OVERSCAN_TOP_MM=3.5
+BOOTH_OVERSCAN_TOP_MM=4
 BOOTH_OVERSCAN_BOTTOM_MM=3
-BOOTH_OVERSCAN_LEFT_MM=2
-BOOTH_OVERSCAN_RIGHT_MM=2
+BOOTH_OVERSCAN_LEFT_MM=2.5
+BOOTH_OVERSCAN_RIGHT_MM=3
 ```
 
-The strips are then laid out inside what survives, so every photo keeps 2.5mm
-from the real paper edge and the cut ticks land mid-paper. Don't do this with
-`BOOTH_OUTER_MARGIN_MM`: that margin also applies at the centre cut, so raising
-it for the paper edge leaves each strip off-centre after cutting. If you set it
-(or `BOOTH_MARGIN_TOP_MM` / `_BOTTOM_MM`) for this in the past, remove them.
-
-`sudo systemctl restart booth-print` (the journal logs the overscan it picked
-up), then test a real strip with the same values. The CLI reads them from the
-environment, not from `/etc/booth.env`:
+**4. Check a real strip, and nudge.** The CLI reads these from the shell, not
+from `/etc/booth.env`, and prints the overscan it used, so check that line:
 
 ```bash
-BOOTH_OVERSCAN_TOP_MM=3.5 BOOTH_OVERSCAN_BOTTOM_MM=3 BOOTH_OVERSCAN_LEFT_MM=2 BOOTH_OVERSCAN_RIGHT_MM=2 \
-  python3 photobooth_print.py --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
+export BOOTH_OVERSCAN_TOP_MM=4 BOOTH_OVERSCAN_BOTTOM_MM=3 BOOTH_OVERSCAN_LEFT_MM=2.5 BOOTH_OVERSCAN_RIGHT_MM=3
+python3 photobooth_print.py --printer selphy-net --page-size jpn_hagaki_100x148mm.Borderless --print
 ```
+
+Measure from each keyline to the paper edge; every side should be 2.5mm. Each
+side is independent. If a side's gap is X mm short, add X to that side's
+overscan. If it's X mm wide, subtract X. Re-export, reprint, and repeat until
+they match. Then copy the final numbers into `/etc/booth.env` and restart.
+
+**5. Cut on the grey ticks, not the middle of the paper.** The ticks mark the
+centre of what printed. With the overscan right, that is the middle of the
+paper anyway. If it's still off, the ticks keep both strips identical.
+
+Don't use `BOOTH_OUTER_MARGIN_MM` to dodge cropping: it also applies at the
+centre cut, so raising it for one edge leaves each strip off-centre after
+cutting. If you set it (or `BOOTH_MARGIN_TOP_MM` / `_BOTTOM_MM`) for that in the
+past, remove them.
 
 Photos shrink by the overscan: each strip loses half the left+right total in
 width, and each of the four cells loses a quarter of the top+bottom total in
-height (2mm and about 1.6mm for the numbers above). Re-run the calibration after any
-change of printer, queue or page size.
+height (about 2.75mm and 1.75mm for the numbers above). Re-run the calibration
+after any change of printer, queue or page size.
 
 If the grep finds no `.Borderless` size, this printer's IPP path can't do it
 and the answer is the USB + Gutenprint queue below.

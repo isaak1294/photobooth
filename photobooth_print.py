@@ -478,33 +478,98 @@ def build_sheet(
     return sheet
 
 
-def build_calibration_sheet(sheet_px: tuple[int, int], max_mm: int = 12) -> Image.Image:
-    """A sheet of nested rectangles, one per millimetre in from the paper edge,
-    each labelled on all four sides with its inset. Print it on the booth's
-    page size and the outermost line still visible on a side IS that side's
-    overscan in mm: it goes straight into BOOTH_OVERSCAN_<SIDE>_MM. Drawn black
-    on white so the answer reads under any light, with the centre cut line for
-    good measure. Never apply overscan here — this is what measures it."""
+def build_calibration_sheet(
+    sheet_px: tuple[int, int], max_mm: int = 8, legend: Sequence[str] = ()
+) -> Image.Image:
+    """Edge rulers for measuring overscan. Each side gets three rulers counting
+    millimetres in from the image edge, ticked every half mm and numbered every
+    mm. Print it on the booth's page size; the reading where the paper edge cuts
+    a ruler is that side's overscan, and goes straight into
+    BOOTH_OVERSCAN_<SIDE>_MM. Three per side because a sheet that feeds in
+    crooked reads differently at each end, which no overscan setting can fix.
+    The centre lines are for a fold test: fold the print in half and the line
+    should land on the fold. Black on white so it reads under any light, and
+    `legend` (page size, date) is printed in the middle so a print on the desk
+    still says what produced it. Never apply overscan here — this is what
+    measures it."""
     w, h = sheet_px
     sheet = Image.new("RGB", (w, h), (255, 255, 255))
     draw = ImageDraw.Draw(sheet)
-    font = _load_font(int(mm_to_px(2.2)))
-    for d in range(1, max_mm + 1):
-        inset = mm_to_px(d)
-        heavy = d % 5 == 0
-        draw.rectangle([inset, inset, w - 1 - inset, h - 1 - inset], outline=(0, 0, 0), width=3 if heavy else 1)
-        label = f"{d}"
-        box = draw.textbbox((0, 0), label, font=font)
-        tw, th = box[2] - box[0], box[3] - box[1]
-        pad = mm_to_px(0.3)
-        # Just inside the line, centred on each side; staggered so labels for
-        # neighbouring millimetres don't overprint.
-        shift = (d % 2) * mm_to_px(6)
-        draw.text((w // 2 - tw // 2 + shift, inset + pad), label, font=font, fill=(0, 0, 0))  # top
-        draw.text((w // 2 - tw // 2 + shift, h - inset - pad - th - box[1]), label, font=font, fill=(0, 0, 0))  # bottom
-        draw.text((inset + pad, h // 2 - th // 2 + shift), label, font=font, fill=(0, 0, 0))  # left
-        draw.text((w - inset - pad - tw, h // 2 - th // 2 + shift), label, font=font, fill=(0, 0, 0))  # right
-    draw.line([(w // 2, 0), (w // 2, h)], fill=(160, 160, 160), width=2)
+    ink = (0, 0, 0)
+    font = _load_font(mm_to_px(1.6))
+    gap = mm_to_px(0.4)
+
+    draw.line([(w // 2, 0), (w // 2, h)], fill=(170, 170, 170), width=2)
+    draw.line([(0, h // 2), (w, h // 2)], fill=(170, 170, 170), width=2)
+
+    def label(text: str, cx: float, cy: float) -> None:
+        box = draw.textbbox((0, 0), text, font=font)
+        draw.text((cx - (box[0] + box[2]) / 2, cy - (box[1] + box[3]) / 2), text, font=font, fill=ink)
+
+    def ruler(side: str, along: int) -> None:
+        """One ruler on `side`, centred `along` px down (left/right) or across
+        (top/bottom) that edge. Whole-mm ticks are long and numbered, odd
+        numbers on one side of the ruler and even on the other so neighbours
+        never touch; half-mm ticks are short."""
+        for step in range(1, 2 * max_mm + 1):
+            mm, whole = step / 2, step % 2 == 0
+            reach = mm_to_px(2.0 if whole else 1.0)
+            width = 3 if whole else 2
+            # Distance in from this side's edge, then the tick's coordinate.
+            inset = mm / MM_PER_IN * DPI
+            at = {"top": inset, "left": inset, "bottom": h - inset, "right": w - inset}[side]
+            if side in ("top", "bottom"):
+                draw.line([(along - reach, at), (along + reach, at)], fill=ink, width=width)
+            else:
+                draw.line([(at, along - reach), (at, along + reach)], fill=ink, width=width)
+            if not whole:
+                continue
+            n = int(mm)
+            sign = 1 if n % 2 else -1
+            off = reach + gap + mm_to_px(0.8)
+            if side in ("top", "bottom"):
+                label(str(n), along + sign * off, at)
+            else:
+                label(str(n), at, along + sign * off)
+        # Name the ruler just past its last tick, so a photo of the print says
+        # which edge each reading came from.
+        end = mm_to_px(max_mm + 2.2)
+        name = side.upper()
+        if side == "top":
+            label(name, along, end)
+        elif side == "bottom":
+            label(name, along, h - end)
+        elif side == "left":
+            label(name, end + mm_to_px(1.5), along)
+        else:
+            label(name, w - end - mm_to_px(1.5), along)
+
+    for frac in (0.2, 0.5, 0.8):
+        ruler("top", round(w * frac))
+        ruler("bottom", round(w * frac))
+        ruler("left", round(h * frac))
+        ruler("right", round(h * frac))
+
+    lines = [
+        "OVERSCAN CALIBRATION",
+        "Read each ruler where the paper edge cuts it.",
+        "That number is the side's overscan in mm.",
+        *legend,
+    ]
+    title_font, body_font = _load_font(mm_to_px(2.6)), _load_font(mm_to_px(1.9))
+    boxes = [draw.textbbox((0, 0), t, font=title_font if i == 0 else body_font) for i, t in enumerate(lines)]
+    line_h = mm_to_px(3.6)
+    block_w = max(b[2] - b[0] for b in boxes) + mm_to_px(4)
+    top = h // 2 - mm_to_px(16) - (len(lines) * line_h) // 2
+    # A white plate so the centre lines don't run through the text.
+    draw.rectangle([w // 2 - block_w // 2, top - mm_to_px(2), w // 2 + block_w // 2, top + len(lines) * line_h + mm_to_px(1)], fill=(255, 255, 255))
+    for i, (text, box) in enumerate(zip(lines, boxes)):
+        draw.text(
+            (w // 2 - (box[0] + box[2]) / 2, top + i * line_h - box[1]),
+            text,
+            font=title_font if i == 0 else body_font,
+            fill=ink,
+        )
     return sheet
 
 
@@ -837,7 +902,11 @@ def main() -> None:
 
     sheet_px = read_page_size_px(args.printer, args.page_size)
     if args.calibrate:
-        sheet = build_calibration_sheet(sheet_px)
+        legend = [
+            f"{args.printer}  ·  {args.page_size}",
+            f"{sheet_px[0]} x {sheet_px[1]} px  ·  {time.strftime('%Y-%m-%d %H:%M')}",
+        ]
+        sheet = build_calibration_sheet(sheet_px, legend=legend)
     else:
         # Same margin and overscan env vars the print agent honours, so a CLI
         # test print matches what the booth will produce.
@@ -849,6 +918,13 @@ def main() -> None:
         )
         sheet_layout = replace(sheet_layout_from_env(), strips_per_sheet=args.strips)
         sheet = build_sheet(photos, sheet_px, strip_layout, sheet_layout)
+        # The CLI can't read /etc/booth.env (root-only), so a test print run
+        # without the variables in the shell silently uses zero. Say so.
+        print(
+            f"overscan mm: top={sheet_layout.overscan_top_mm} bottom={sheet_layout.overscan_bottom_mm} "
+            f"left={sheet_layout.overscan_left_mm} right={sheet_layout.overscan_right_mm}"
+            " (from BOOTH_OVERSCAN_* in this shell, not /etc/booth.env)"
+        )
     pdf = sheet_to_pdf(sheet, args.out)
     sheet.save(args.out.with_suffix(".png"))
     print(f"sheet: {sheet.size[0]} x {sheet.size[1]} px -> {pdf}")
